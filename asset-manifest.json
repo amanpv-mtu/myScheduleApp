@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/amanpv-mtu/myScheduleApp/static/css/main.e6c13ad2.css",
+    "main.js": "/amanpv-mtu/myScheduleApp/static/js/main.bd7673fc.js",
+    "static/js/453.2298a555.chunk.js": "/amanpv-mtu/myScheduleApp/static/js/453.2298a555.chunk.js",
+    "index.html": "/amanpv-mtu/myScheduleApp/index.html",
+    "main.e6c13ad2.css.map": "/amanpv-mtu/myScheduleApp/static/css/main.e6c13ad2.css.map",
+    "main.bd7673fc.js.map": "/amanpv-mtu/myScheduleApp/static/js/main.bd7673fc.js.map",
+    "453.2298a555.chunk.js.map": "/amanpv-mtu/myScheduleApp/static/js/453.2298a555.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.e6c13ad2.css",
+    "static/js/main.bd7673fc.js"
+  ]
+}
