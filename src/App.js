@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit, Plus, Trash2, Save, X, Clock, CheckCircle, AlertCircle, PlayCircle, StopCircle, RefreshCcw, Link, Upload, Download } from 'lucide-react'; // Added new icons
+import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit, Plus, Trash2, Save, X, Clock, CheckCircle, AlertCircle, PlayCircle, StopCircle, RefreshCcw, Link, Upload, Download, BellRing } from 'lucide-react'; // Added new icons
 
 // Tailwind CSS is assumed to be available in the environment.
 
@@ -43,13 +43,15 @@ const formatDateToYYYYMMDD = (date) => {
 
 // Helper to determine time of day group for styling and grouping
 const getTimeOfDayGroup = (timeStr) => {
-  const [hours] = timeStr.split(':').map(Number);
+  const [hours, minutes] = timeStr.split(':').map(Number);
 
-  if (hours >= 0 && hours < 5) return 'night'; // 00:00 to 04:59
+  // Redefined Night: from Maghrib (21:55) to end of sleep (05:00)
+  // This means 21:55 onwards, and 00:00 to 04:59
+  if ((hours > 21 || (hours === 21 && minutes >= 55)) || (hours >= 0 && hours < 5)) return 'night'; // 21:55 to 04:59 (next day)
   if (hours >= 5 && hours < 9) return 'early-morning'; // 05:00 to 08:59
   if (hours >= 9 && hours < 13) return 'midday'; // 09:00 to 12:59
   if (hours >= 13 && hours < 19) return 'afternoon'; // 13:00 to 18:59
-  if (hours >= 19 && hours <= 23) return 'evening'; // 19:00 to 23:59
+  if (hours >= 19 && (hours < 21 || (hours === 21 && minutes < 55))) return 'evening'; // 19:00 to 21:54
 
   return ''; // Fallback
 };
@@ -85,7 +87,8 @@ const initialDefaultSchedule = { // Renamed to initialDefaultSchedule
     { id: 'quran-evening', activity: 'Evening Routine / Quran / Prepare for Bed', plannedStart: '22:15', plannedEnd: '23:15', type: 'spiritual' },
     { id: 'isha-prep', activity: 'Prepare for Isha', plannedStart: '23:15', plannedEnd: '23:25', type: 'spiritual' },
     { id: 'isha-prayer', activity: 'Isha Iqamah & Prayer', plannedStart: '23:25', plannedEnd: '23:45', type: 'spiritual' },
-    { id: 'pre-sleep', activity: 'Pre-Sleep Routine', plannedStart: '23:45', plannedEnd: '00:00', type: 'personal' },
+    { id: 'plan-next-day', activity: 'Plan Next Day', plannedStart: '23:45', plannedEnd: '23:55', type: 'personal' }, // Added new activity
+    { id: 'pre-sleep', activity: 'Pre-Sleep Routine', plannedStart: '23:55', plannedEnd: '00:00', type: 'personal' }, // Adjusted start time
     { id: 'sleep', activity: 'Lights Out / Sleep', plannedStart: '00:00', plannedEnd: '05:00', type: 'personal' },
   ],
   // Specific activities for soccer days
@@ -149,7 +152,7 @@ function App() {
   const [editingSubTaskId, setEditingSubTaskId] = useState(null); // State to track which ad-hoc sub-task is being edited
 
   // State to track the currently running schedule block for the Pomodoro timer
-  const [currentPomodoroBlockId, setCurrentPomodoroBlockId] = useState(null);
+  const [currentPomodoroBlockId, setCurrentPomodoroBlockId] = useState(0);
   // State to track how much time of the current schedule block has been consumed by Pomodoro cycles
   const [blockTimeConsumed, setBlockTimeConsumed] = useState(0); // in seconds
 
@@ -213,6 +216,15 @@ function App() {
     }
   });
 
+  // NEW: State for reminder modal
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [reminderActivity, setReminderActivity] = useState(null);
+  // Using useRef to store reminders shown today, so updates don't trigger re-renders
+  const remindersShownToday = useRef(new Set());
+
+  // NEW: State for audio enablement
+  const [audioEnabled, setAudioEnabled] = useState(false);
+
 
   // Ref for the table container to enable scrolling
   const scheduleTableRef = useRef(null);
@@ -258,6 +270,11 @@ function App() {
     localStorage.setItem('projectTasks', JSON.stringify(projectTasks));
   }, [projectTasks]);
 
+  // Reset remindersShownToday when currentDate changes
+  useEffect(() => {
+    remindersShownToday.current = new Set();
+  }, [currentDate]);
+
 
   // Pomodoro Timer Logic
   useEffect(() => {
@@ -268,7 +285,9 @@ function App() {
             return { ...prev, timeLeft: prev.timeLeft - 1 };
           } else {
             // Time's up, play sound and clear interval
-            audioRef.current.play();
+            if (audioEnabled) { // Only play if audio is enabled
+              audioRef.current.play();
+            }
             clearInterval(intervalRef.current);
 
             let nextMode = prev.mode;
@@ -362,7 +381,7 @@ function App() {
     }
 
     return () => clearInterval(intervalRef.current);
-  }, [pomodoroTimer.running, pomodoroTimer.timeLeft, pomodoroTimer.mode, pomodoroSettings, currentPomodoroBlockId, dailyScheduleState, blockTimeConsumed]);
+  }, [pomodoroTimer.running, pomodoroTimer.timeLeft, pomodoroTimer.mode, pomodoroSettings, currentPomodoroBlockId, dailyScheduleState, blockTimeConsumed, audioEnabled]);
 
 
   const subdivideActivity = useCallback((activity, maxMinutes, dateContext) => {
@@ -456,10 +475,26 @@ function App() {
       scheduleForDay.splice(insertIndex > -1 ? insertIndex : scheduleForDay.length, 0, jumuahPrayer);
     }
 
+    // Custom sort logic to put activities spanning midnight at the end of the day
     scheduleForDay.sort((a, b) => {
       const timeA = parseTime(a.plannedStart, currentDate);
       const timeB = parseTime(b.plannedStart, currentDate);
-      return timeA - timeB;
+
+      let sortableTimeA = timeA;
+      let sortableTimeB = timeB;
+
+      // If an activity starts before 5 AM, treat it as if it's on the "next" day for sorting purposes
+      // This ensures 'Lights Out / Sleep' (00:00 - 05:00) comes after activities ending near midnight
+      if (timeA.getHours() < 5) {
+        sortableTimeA = new Date(timeA);
+        sortableTimeA.setDate(sortableTimeA.getDate() + 1);
+      }
+      if (timeB.getHours() < 5) {
+        sortableTimeB = new Date(timeB);
+        sortableTimeB.setDate(sortableTimeB.getDate() + 1);
+      }
+
+      return sortableTimeA - sortableTimeB;
     });
 
     let finalSchedule = [];
@@ -497,12 +532,27 @@ function App() {
         const activityStartToday = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), plannedStart.getHours(), plannedStart.getMinutes(), 0, 0);
         let activityEndToday = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), plannedEnd.getHours(), plannedEnd.getMinutes(), 0, 0);
 
+        // Handle activities that span across midnight
         if (plannedEnd < plannedStart) {
           activityEndToday.setDate(activityEndToday.getDate() + 1);
         }
 
+        // Check for current activity
         if (currentEstDate >= activityStartToday && currentEstDate < activityEndToday) {
           foundCurrentActivity = activity.id;
+        }
+
+        // Check for reminders (5 minutes before planned start)
+        const reminderTime = new Date(activityStartToday.getTime() - 5 * 60 * 1000);
+        if (currentEstDate >= reminderTime && currentEstDate < activityStartToday) {
+            if (!remindersShownToday.current.has(activity.id)) {
+                setReminderActivity(activity);
+                setShowReminderModal(true);
+                if (audioEnabled) { // Only play if audio is enabled
+                  audioRef.current.play();
+                }
+                remindersShownToday.current.add(activity.id); // Mark as shown
+            }
         }
       });
       setCurrentActivityId(foundCurrentActivity);
@@ -512,7 +562,8 @@ function App() {
     updateCurrentBlockAndProgress();
 
     return () => clearInterval(interval);
-  }, [dailyScheduleState, currentDate]);
+  }, [dailyScheduleState, currentDate, audioRef, audioEnabled]); // Added audioEnabled to dependencies
+
 
   useEffect(() => {
     if (currentActivityId && activeTab === 'schedule' && activityRefs.current.has(currentActivityId)) {
@@ -1216,6 +1267,13 @@ function App() {
     reader.readAsText(file);
   };
 
+  const handleEnableAudio = () => {
+    setAudioEnabled(true);
+    // Attempt to play a silent sound or the actual alert sound
+    // This initial play, triggered by user interaction, will unlock subsequent programmatic plays
+    audioRef.current.play().catch(e => console.log("Audio play failed on initial attempt (expected if no sound):", e));
+  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 font-inter text-gray-800 flex flex-col items-center">
@@ -1357,6 +1415,22 @@ function App() {
                 </button>
               </div>
               <p className="text-sm text-gray-500 mt-2">Pomodoros Completed: {pomodoroTimer.pomodorosCompleted}</p>
+
+              {/* Audio Enable Button */}
+              {!audioEnabled && (
+                <button
+                  onClick={handleEnableAudio}
+                  className="mt-4 px-4 py-2 bg-purple-500 text-white rounded-md shadow-md hover:bg-purple-600 transition-colors duration-200 flex items-center justify-center mx-auto"
+                >
+                  <BellRing size={20} className="mr-2" /> Enable Sounds
+                </button>
+              )}
+              {audioEnabled && (
+                <p className="mt-4 text-sm text-green-700 flex items-center justify-center">
+                  <BellRing size={16} className="mr-1" /> Sounds Enabled
+                </p>
+              )}
+
 
               {/* Daily Insights */}
               <div className="mt-4 border-t pt-4 border-indigo-200">
@@ -2475,6 +2549,35 @@ function App() {
           assigningToActivity={assigningToActivity}
           assigningFromTask={assigningFromTask}
         />
+      )}
+
+      {/* NEW: Reminder Modal */}
+      {showReminderModal && reminderActivity && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm text-center relative">
+            <button
+              onClick={() => setShowReminderModal(false)}
+              className="absolute top-3 right-3 p-1 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+              aria-label="Close reminder"
+            >
+              <X size={20} />
+            </button>
+            <BellRing size={48} className="mx-auto text-yellow-500 mb-4 animate-bounce" />
+            <h3 className="text-2xl font-bold text-indigo-700 mb-2">Upcoming Activity!</h3>
+            <p className="text-lg text-gray-800 mb-4">
+              <span className="font-semibold">{reminderActivity.activity}</span>
+            </p>
+            <p className="text-md text-gray-600 mb-6">
+              Starting at: <span className="font-bold">{reminderActivity.plannedStart}</span>
+            </p>
+            <button
+              onClick={() => setShowReminderModal(false)}
+              className="px-6 py-2 bg-indigo-600 text-white rounded-md shadow-md hover:bg-indigo-700 transition-colors"
+            >
+              Got It!
+            </button>
+          </div>
+        </div>
       )}
 
     </div>
