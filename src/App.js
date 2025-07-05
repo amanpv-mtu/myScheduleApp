@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit } from 'lucide-react'; // Added Edit icon
+import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit, Plus, Trash2, Save, X } from 'lucide-react'; // Added new icons
 
 // Tailwind CSS is assumed to be available in the environment.
 
@@ -31,10 +31,23 @@ const formatTo24HourTime = (date) => {
   return `${hours}:${minutes}`;
 };
 
+// Helper to determine time of day group for styling
+const getTimeOfDayGroup = (timeStr) => {
+  const [hours] = timeStr.split(':').map(Number);
+
+  if (hours >= 0 && hours < 5) return 'night'; // 00:00 to 04:59
+  if (hours >= 5 && hours < 9) return 'early-morning'; // 05:00 to 08:59
+  if (hours >= 9 && hours < 13) return 'midday'; // 09:00 to 12:59
+  if (hours >= 13 && hours < 19) return 'afternoon'; // 13:00 to 18:59
+  if (hours >= 19 && hours <= 23) return 'evening'; // 19:00 to 23:59
+
+  return ''; // Fallback
+};
+
 // Default schedule data (adjust as needed for your actual Houghton times)
 // IMPORTANT: These are the Kentwood, MI times you provided earlier.
 // You MUST update these to your actual Houghton, MI Masjid times for accuracy.
-const defaultSchedule = {
+const initialDefaultSchedule = { // Renamed to initialDefaultSchedule
   // Common activities for all days
   common: [
     { id: 'wake-up', activity: 'Wake Up', plannedStart: '05:00', plannedEnd: '05:00', type: 'personal' },
@@ -43,15 +56,15 @@ const defaultSchedule = {
     { id: 'quran-morning', activity: 'Quran Recitation & Reflection (Morning)', plannedStart: '05:45', plannedEnd: '06:00', type: 'spiritual' },
     { id: 'morning-exercise', activity: 'Morning Exercise', plannedStart: '06:00', plannedEnd: '06:30', type: 'physical' },
     { id: 'breakfast', activity: 'Breakfast & Plan Day', plannedStart: '06:30', plannedEnd: '07:00', type: 'personal' },
-    { id: 'dissertation-1', activity: 'Dissertation Deep Work Block 1', plannedStart: '07:00', plannedEnd: '09:30', type: 'academic' },
+    { id: 'deep-work-1', activity: 'Deep Work Mode Block 1', plannedStart: '07:00', plannedEnd: '09:30', type: 'academic' }, // Renamed
     { id: 'break-1', activity: 'Break / Movement', plannedStart: '09:30', plannedEnd: '09:45', type: 'personal' },
-    { id: 'dissertation-2', activity: 'Dissertation Deep Work Block 2', plannedStart: '09:45', plannedEnd: '12:15', type: 'academic' },
+    { id: 'deep-work-2', activity: 'Deep Work Mode Block 2', plannedStart: '09:45', plannedEnd: '12:15', type: 'academic' }, // Renamed
     { id: 'lunch', activity: 'Lunch Prep & Eat', plannedStart: '12:15', plannedEnd: '13:15', type: 'personal' },
     { id: 'dhuhr-prep', activity: 'Wind down / Prepare for Dhuhr / Family Time', plannedStart: '13:15', plannedEnd: '14:25', type: 'personal' },
     { id: 'dhuhr-prayer', activity: 'Dhuhr Iqamah & Prayer', plannedStart: '14:25', plannedEnd: '14:45', type: 'spiritual' },
     { id: 'short-break-after-dhuhr', activity: 'Short Break', plannedStart: '14:45', plannedEnd: '15:00', type: 'personal' },
     { id: 'power-nap', activity: 'Power Nap', plannedStart: '15:00', plannedEnd: '15:30', type: 'personal' },
-    { id: 'dissertation-3', activity: 'Dissertation Flexible Work Block', plannedStart: '15:30', plannedEnd: '17:00', type: 'academic' },
+    { id: 'deep-work-3', activity: 'Deep Work Mode Flexible Work Block', plannedStart: '15:30', plannedEnd: '17:00', type: 'academic' }, // Renamed
     { id: 'flexible-afternoon', activity: 'Flexible Block / Errands / Relax / Family Time', plannedStart: '17:00', plannedEnd: '19:25', type: 'personal' },
     { id: 'asr-prayer', activity: 'Asr Iqamah & Prayer', plannedStart: '19:25', plannedEnd: '19:45', type: 'spiritual' },
     { id: 'evening-exercise', activity: 'Evening Exercise', plannedStart: '19:45', plannedEnd: '20:15', type: 'physical' },
@@ -104,7 +117,7 @@ function App() {
     timeLeft: pomodoroSettings.work * 60,
     pomodorosCompleted: 0,
   });
-  const [activeTab, setActiveTab] = useState('schedule'); // 'schedule', 'report', 'settings'
+  const [activeTab, setActiveTab] = useState('schedule'); // 'schedule', 'report', 'settings', 'planner'
   const [reportDate, setReportDate] = useState(new Date());
   const intervalRef = useRef(null);
   const audioRef = useRef(new Audio('https://www.soundjay.com/buttons/beep-07.mp3')); // Simple beep sound
@@ -125,10 +138,27 @@ function App() {
   });
   const [editingSubTaskId, setEditingSubTaskId] = useState(null); // State to track which sub-task is being edited
 
-  // NEW: State to track the currently running schedule block for the Pomodoro timer
+  // State to track the currently running schedule block for the Pomodoro timer
   const [currentPomodoroBlockId, setCurrentPomodoroBlockId] = useState(null);
-  // NEW: State to track how much time of the current schedule block has been consumed by Pomodoro cycles
+  // State to track how much time of the current schedule block has been consumed by Pomodoro cycles
   const [blockTimeConsumed, setBlockTimeConsumed] = useState(0); // in seconds
+
+  // NEW: State for the customizable planner schedule (base common activities)
+  const [plannerSchedule, setPlannerSchedule] = useState(() => {
+    try {
+      const savedPlannerSchedule = localStorage.getItem('plannerSchedule');
+      // If a saved schedule exists, parse it. Otherwise, use a deep copy of the initial default common schedule.
+      return savedPlannerSchedule ? JSON.parse(savedPlannerSchedule) : JSON.parse(JSON.stringify(initialDefaultSchedule.common));
+    } catch (error) {
+      console.error("Failed to parse plannerSchedule from localStorage:", error);
+      return JSON.parse(JSON.stringify(initialDefaultSchedule.common)); // Fallback to default
+    }
+  });
+
+  // State for the activity being edited in the planner modal
+  const [editingActivity, setEditingActivity] = useState(null);
+  // State to control the visibility of the planner modal
+  const [isPlannerModalOpen, setIsPlannerModalOpen] = useState(false);
 
 
   // Save logs and settings to localStorage
@@ -150,6 +180,11 @@ function App() {
   useEffect(() => {
     localStorage.setItem('subTaskDetails', JSON.stringify(subTaskDetails));
   }, [subTaskDetails]);
+
+  // NEW: Save plannerSchedule to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('plannerSchedule', JSON.stringify(plannerSchedule));
+  }, [plannerSchedule]);
 
 
   // Pomodoro Timer Logic
@@ -319,7 +354,8 @@ function App() {
     const isSoccerDay = dayOfWeek === 3 || dayOfWeek === 6; // Wednesday (3) or Saturday (6)
     const isJumuah = dayOfWeek === 5; // Friday (5)
 
-    let scheduleForDay = [...defaultSchedule.common];
+    // NEW: Use plannerSchedule as the base for common activities
+    let scheduleForDay = JSON.parse(JSON.stringify(plannerSchedule)); // Deep copy to avoid direct mutation
 
     if (isSoccerDay) {
       // Filter out activities that conflict with soccer
@@ -328,7 +364,7 @@ function App() {
                   (parseTime(item.plannedStart, currentDate) >= parseTime('20:00', currentDate) && parseTime(item.plannedEnd, currentDate) <= parseTime('22:00', currentDate)))
       );
       // Insert soccer game at the correct time slot
-      const soccerGame = defaultSchedule.soccerDays[0];
+      const soccerGame = initialDefaultSchedule.soccerDays[0]; // Use initial default for fixed events
       const insertIndex = scheduleForDay.findIndex(item => parseTime(item.plannedStart, currentDate) > parseTime(soccerGame.plannedStart, currentDate));
       scheduleForDay.splice(insertIndex > -1 ? insertIndex : scheduleForDay.length, 0, soccerGame);
 
@@ -363,7 +399,7 @@ function App() {
     if (isJumuah) {
       // Replace Dhuhr with Jumu'ah
       scheduleForDay = scheduleForDay.filter(item => item.id !== 'dhuhr-prayer');
-      const jumuahPrayer = defaultSchedule.jumuah[0];
+      const jumuahPrayer = initialDefaultSchedule.jumuah[0]; // Use initial default for fixed events
       const insertIndex = scheduleForDay.findIndex(item => parseTime(item.plannedStart, currentDate) > parseTime(jumuahPrayer.plannedStart, currentDate));
       scheduleForDay.splice(insertIndex > -1 ? insertIndex : scheduleForDay.length, 0, jumuahPrayer);
     }
@@ -375,7 +411,7 @@ function App() {
       return timeA - timeB;
     });
 
-    // NEW: Subdivide activities into smaller blocks
+    // Subdivide activities into smaller blocks
     let finalSchedule = [];
     scheduleForDay.forEach(activity => {
       const plannedDurationMinutes = getPlannedDuration(activity.plannedStart, activity.plannedEnd, currentDate) * 60;
@@ -388,7 +424,7 @@ function App() {
     });
 
     setDailyScheduleState(finalSchedule); // Update the state with the calculated and subdivided schedule
-  }, [currentDate, subdivideActivity]); // Recalculate only when currentDate or subdivideActivity (which is memoized) changes
+  }, [currentDate, subdivideActivity, plannerSchedule]); // Add plannerSchedule as a dependency
 
   // useEffect for current block highlighting and progress bar updates
   useEffect(() => {
@@ -455,7 +491,7 @@ function App() {
       timeLeft: pomodoroSettings.work * 60,
       pomodorosCompleted: 0,
     });
-    // NEW: Reset current Pomodoro block tracking
+    // Reset current Pomodoro block tracking
     setCurrentPomodoroBlockId(null);
     setBlockTimeConsumed(0);
   };
@@ -685,6 +721,51 @@ function App() {
     }
   };
 
+  // NEW: Planner functions
+  const handleAddActivity = () => {
+    setEditingActivity({
+      id: `new-${Date.now()}`, // Temporary ID for new activity
+      activity: '',
+      plannedStart: '09:00',
+      plannedEnd: '10:00',
+      type: 'personal',
+      isNew: true, // Flag to indicate a new activity
+    });
+    setIsPlannerModalOpen(true);
+  };
+
+  const handleEditActivity = (activity) => {
+    setEditingActivity({ ...activity }); // Create a copy to edit
+    setIsPlannerModalOpen(true);
+  };
+
+  const handleDeleteActivity = (activityId) => {
+    if (window.confirm('Are you sure you want to delete this activity?')) { // Using window.confirm for simplicity, replace with custom modal if preferred
+      setPlannerSchedule(prevSchedule => prevSchedule.filter(act => act.id !== activityId));
+    }
+  };
+
+  const handleSaveActivity = (updatedActivity) => {
+    setPlannerSchedule(prevSchedule => {
+      if (updatedActivity.isNew) {
+        // Remove temporary ID and add to schedule
+        const { isNew, ...newActivity } = updatedActivity;
+        return [...prevSchedule, { ...newActivity, id: crypto.randomUUID() }];
+      } else {
+        return prevSchedule.map(act =>
+          act.id === updatedActivity.id ? updatedActivity : act
+        );
+      }
+    });
+    setIsPlannerModalOpen(false);
+    setEditingActivity(null);
+  };
+
+  const handleCancelEdit = () => {
+    setIsPlannerModalOpen(false);
+    setEditingActivity(null);
+  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 font-inter text-gray-800 flex flex-col items-center">
@@ -700,6 +781,14 @@ function App() {
               }`}
             >
               <CalendarDays className="inline-block mr-2" size={18} /> Schedule
+            </button>
+            <button
+              onClick={() => setActiveTab('planner')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                activeTab === 'planner' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              <Plus className="inline-block mr-2" size={18} /> Planner
             </button>
             <button
               onClick={() => setActiveTab('report')}
@@ -799,12 +888,18 @@ function App() {
                     // Check if it's an academic Pomodoro OR a subdivided flexible block
                     const isSubdividedBlock = (activity.type === 'academic' || activity.originalActivityId === 'flexible-afternoon') && activity.id.includes('-part');
                     const currentSubTask = subTaskDetails[activity.id] || '';
+                    const timeGroup = getTimeOfDayGroup(activity.plannedStart); // Get time group
 
                     return (
                       <tr
                         key={activity.id}
                         className={`border-b border-gray-200 hover:bg-gray-50 relative
                           ${activity.id === currentActivityId ? 'bg-indigo-100 border-l-4 border-indigo-600' : ''}
+                          ${timeGroup === 'night' ? 'bg-gray-100' : ''}
+                          ${timeGroup === 'early-morning' ? 'bg-sky-50' : ''}
+                          ${timeGroup === 'midday' ? 'bg-amber-50' : ''}
+                          ${timeGroup === 'afternoon' ? 'bg-emerald-50' : ''}
+                          ${timeGroup === 'evening' ? 'bg-purple-50' : ''}
                         `}
                       >
                         <td className="py-3 px-4 text-sm font-medium text-gray-700">
@@ -880,6 +975,145 @@ function App() {
           </div>
         )}
 
+        {/* NEW: Planner Tab */}
+        {activeTab === 'planner' && (
+          <div>
+            <h2 className="text-2xl font-semibold text-indigo-800 mb-4">Customize Your Schedule</h2>
+            <p className="text-gray-600 mb-4">
+              Edit your default daily activities here. Changes will apply to future schedules.
+              Day-specific events (like soccer or Jumu'ah) will still override or integrate as usual.
+            </p>
+            <button
+              onClick={handleAddActivity}
+              className="mb-4 px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center"
+            >
+              <Plus size={20} className="mr-2" /> Add New Activity
+            </button>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white rounded-lg shadow-md">
+                <thead className="bg-indigo-100">
+                  <tr>
+                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tl-lg">Activity</th>
+                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Start</th>
+                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">End</th>
+                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Type</th>
+                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tr-lg">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {plannerSchedule.sort((a, b) => parseTime(a.plannedStart) - parseTime(b.plannedStart)).map((activity) => {
+                    const timeGroup = getTimeOfDayGroup(activity.plannedStart); // Get time group
+                    return (
+                      <tr key={activity.id} className={`border-b border-gray-200 hover:bg-gray-50
+                        ${timeGroup === 'night' ? 'bg-gray-100' : ''}
+                        ${timeGroup === 'early-morning' ? 'bg-sky-50' : ''}
+                        ${timeGroup === 'midday' ? 'bg-amber-50' : ''}
+                        ${timeGroup === 'afternoon' ? 'bg-emerald-50' : ''}
+                        ${timeGroup === 'evening' ? 'bg-purple-50' : ''}
+                      `}>
+                        <td className="py-3 px-4 text-sm font-medium text-gray-700">{activity.activity}</td>
+                        <td className="py-3 px-4 text-sm text-gray-600">{activity.plannedStart}</td>
+                        <td className="py-3 px-4 text-sm text-gray-600">{activity.plannedEnd}</td>
+                        <td className="py-3 px-4 text-sm text-gray-600 capitalize">{activity.type}</td>
+                        <td className="py-3 px-4 text-sm">
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => handleEditActivity(activity)}
+                              className="p-2 bg-blue-500 text-white rounded-md text-xs hover:bg-blue-600 transition-colors duration-200"
+                            >
+                              <Edit size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteActivity(activity.id)}
+                              className="p-2 bg-red-500 text-white rounded-md text-xs hover:bg-red-600 transition-colors duration-200"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Planner Add/Edit Modal */}
+        {isPlannerModalOpen && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-center p-4 z-50">
+            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+              <h3 className="text-xl font-semibold text-indigo-700 mb-4">
+                {editingActivity?.isNew ? 'Add New Activity' : 'Edit Activity'}
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="activityName" className="block text-sm font-medium text-gray-700">Activity Name</label>
+                  <input
+                    type="text"
+                    id="activityName"
+                    value={editingActivity?.activity || ''}
+                    onChange={(e) => setEditingActivity(prev => ({ ...prev, activity: e.target.value }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="plannedStart" className="block text-sm font-medium text-gray-700">Planned Start (HH:MM)</label>
+                    <input
+                      type="time"
+                      id="plannedStart"
+                      value={editingActivity?.plannedStart || '09:00'}
+                      onChange={(e) => setEditingActivity(prev => ({ ...prev, plannedStart: e.target.value }))}
+                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="plannedEnd" className="block text-sm font-medium text-gray-700">Planned End (HH:MM)</label>
+                    <input
+                      type="time"
+                      id="plannedEnd"
+                      value={editingActivity?.plannedEnd || '10:00'}
+                      onChange={(e) => setEditingActivity(prev => ({ ...prev, plannedEnd: e.target.value }))}
+                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="activityType" className="block text-sm font-medium text-gray-700">Activity Type</label>
+                  <select
+                    id="activityType"
+                    value={editingActivity?.type || 'personal'}
+                    onChange={(e) => setEditingActivity(prev => ({ ...prev, type: e.target.value }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  >
+                    <option value="personal">Personal</option>
+                    <option value="academic">Academic (Deep Work Mode)</option>
+                    <option value="spiritual">Spiritual</option>
+                    <option value="physical">Physical</option>
+                  </select>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end space-x-3">
+                <button
+                  onClick={handleCancelEdit}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors duration-200 flex items-center"
+                >
+                  <X size={18} className="mr-2" /> Cancel
+                </button>
+                <button
+                  onClick={() => handleSaveActivity(editingActivity)}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-md shadow-md hover:bg-indigo-700 transition-colors duration-200 flex items-center"
+                >
+                  <Save size={18} className="mr-2" /> Save Activity
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Report Tab */}
         {activeTab === 'report' && (
           <div>
@@ -904,7 +1138,7 @@ function App() {
             <div className="bg-indigo-50 rounded-lg p-4 mb-6 shadow-inner">
               <h3 className="text-xl font-semibold text-indigo-700 mb-2">Summary</h3>
               <p className="text-lg text-gray-700">
-                Total Actual Dissertation Time:{' '}
+                Total Actual Deep Work Mode Time:{' '} {/* Renamed */}
                 <span className="font-bold text-green-700">
                   {reportData.totalFocused.toFixed(2)} hours
                 </span>
