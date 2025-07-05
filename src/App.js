@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit, Plus, Trash2, Save, X, Clock, CheckCircle, AlertCircle, PlayCircle, StopCircle, RefreshCcw, Link } from 'lucide-react'; // Added new icons
+import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit, Plus, Trash2, Save, X, Clock, CheckCircle, AlertCircle, PlayCircle, StopCircle, RefreshCcw, Link, Upload, Download } from 'lucide-react'; // Added new icons
 
 // Tailwind CSS is assumed to be available in the environment.
 
@@ -194,6 +194,24 @@ function App() {
   const [isAssignTaskModalOpen, setIsAssignTaskModalOpen] = useState(false);
   const [assigningToActivity, setAssigningToActivity] = useState(null); // { date: Date, activityId: string }
   const [assigningFromTask, setAssigningFromTask] = useState(null); // { taskId: string, subtaskId: string }
+
+  // NEW: State for data management options (export/import)
+  const [dataManagementOptions, setDataManagementOptions] = useState({
+    export: {
+      tasks: true,
+      dailySchedule: true,
+      activityLogs: true,
+      pomodoroSettings: true,
+      subTaskDetails: true,
+    },
+    import: {
+      tasks: true,
+      dailySchedule: true,
+      activityLogs: true,
+      pomodoroSettings: true,
+      subTaskDetails: true,
+    }
+  });
 
 
   // Ref for the table container to enable scrolling
@@ -1084,7 +1102,119 @@ function App() {
     }
     acc[quadrant].push(task);
     return acc;
-  }, []);
+  }, {});
+
+  // Handle data management option changes
+  const handleDataOptionChange = (type, category, value) => {
+    setDataManagementOptions(prev => ({
+      ...prev,
+      [type]: {
+        ...prev[type],
+        [category]: value
+      }
+    }));
+  };
+
+  // Export Data Function
+  const handleExportData = () => {
+    const dataToExport = {};
+    if (dataManagementOptions.export.tasks) dataToExport.projectTasks = projectTasks;
+    if (dataManagementOptions.export.activityLogs) dataToExport.activityLogs = activityLogs;
+    if (dataManagementOptions.export.dailySchedule) dataToExport.plannerSchedule = plannerSchedule;
+    if (dataManagementOptions.export.pomodoroSettings) dataToExport.pomodoroSettings = pomodoroSettings;
+    if (dataManagementOptions.export.subTaskDetails) dataToExport.subTaskDetails = subTaskDetails;
+
+    const jsonString = JSON.stringify(dataToExport, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'daily_rhythm_data.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    alert('Selected data exported successfully!');
+  };
+
+  // Import Data Function
+  const handleImportData = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const importedData = JSON.parse(e.target.result);
+        let importedCount = 0;
+        let skippedCount = 0;
+        let message = "Import Summary:\n";
+
+        if (window.confirm('Are you sure you want to import data? This will overwrite selected existing data categories.')) {
+          if (dataManagementOptions.import.tasks && importedData.projectTasks) {
+            setProjectTasks(importedData.projectTasks);
+            importedCount++;
+            message += "- Task List: Imported\n";
+          } else if (dataManagementOptions.import.tasks && !importedData.projectTasks) {
+            skippedCount++;
+            message += "- Task List: Skipped (not found in file)\n";
+          }
+
+          if (dataManagementOptions.import.activityLogs && importedData.activityLogs) {
+            setActivityLogs(importedData.activityLogs);
+            importedCount++;
+            message += "- Activity Logs: Imported\n";
+          } else if (dataManagementOptions.import.activityLogs && !importedData.activityLogs) {
+            skippedCount++;
+            message += "- Activity Logs: Skipped (not found in file)\n";
+          }
+
+          if (dataManagementOptions.import.dailySchedule && importedData.plannerSchedule) {
+            setPlannerSchedule(importedData.plannerSchedule);
+            importedCount++;
+            message += "- Daily Schedule: Imported\n";
+          } else if (dataManagementOptions.import.dailySchedule && !importedData.plannerSchedule) {
+            skippedCount++;
+            message += "- Daily Schedule: Skipped (not found in file)\n";
+          }
+
+          if (dataManagementOptions.import.pomodoroSettings && importedData.pomodoroSettings) {
+            setPomodoroSettings(importedData.pomodoroSettings);
+            importedCount++;
+            message += "- Pomodoro Settings: Imported\n";
+          } else if (dataManagementOptions.import.pomodoroSettings && !importedData.pomodoroSettings) {
+            skippedCount++;
+            message += "- Pomodoro Settings: Skipped (not found in file)\n";
+          }
+
+          if (dataManagementOptions.import.subTaskDetails && importedData.subTaskDetails) {
+              setSubTaskDetails(importedData.subTaskDetails);
+              importedCount++;
+              message += "- Sub-Task Details: Imported\n";
+          } else if (dataManagementOptions.import.subTaskDetails && !importedData.subTaskDetails) {
+              skippedCount++;
+              message += "- Sub-Task Details: Skipped (not found in file)\n";
+          }
+
+          if (importedCount === 0 && skippedCount === 0) {
+              message = "No data categories were selected for import or found in the file.";
+          } else if (importedCount > 0) {
+              message += "\nData imported successfully!";
+          } else {
+              message += "\nNo data was imported.";
+          }
+          alert(message);
+
+        }
+      } catch (error) {
+        console.error("Error importing data:", error);
+        alert('Failed to import data. Please ensure the file is a valid JSON.');
+      }
+      // Clear the file input after processing
+      event.target.value = '';
+    };
+    reader.readAsText(file);
+  };
 
 
   return (
@@ -1232,7 +1362,7 @@ function App() {
               <div className="mt-4 border-t pt-4 border-indigo-200">
                 <h4 className="text-lg font-semibold text-indigo-700 mb-2">Daily Insights</h4>
                 <p className="text-sm text-gray-600">
-                  Focused Work: <span className="font-bold">{(reportData.totalActualFocusedTime || 0).toFixed(2)} / {(reportData.totalPlannedFocusedTime || 0).toFixed(2)} hrs</span>
+                  Focused Work: <span className="font-bold">{(reportData.totalFocused || 0).toFixed(2)} / {(reportData.totalPlannedFocusedTime || 0).toFixed(2)} hrs</span>
                 </p>
                 <p className="text-sm text-gray-600">
                   Prayers Logged: <span className="font-bold">{(reportData.totalActualPrayerTime || 0).toFixed(0)} / {(reportData.totalPlannedPrayerTime || 0).toFixed(0)} (est)</span>
@@ -1890,6 +2020,123 @@ function App() {
                 </div>
               </div>
               <p className="text-sm text-gray-500 mt-4">Changes are saved automatically.</p>
+
+              <h2 className="text-2xl font-semibold text-indigo-800 mt-8 mb-4">Data Management</h2>
+              <div className="flex flex-col space-y-3">
+                <h3 className="text-lg font-semibold text-indigo-700 mt-4 mb-2">Export Options</h3>
+                <div className="grid grid-cols-2 gap-2 text-sm text-gray-700">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                      checked={dataManagementOptions.export.tasks}
+                      onChange={(e) => handleDataOptionChange('export', 'tasks', e.target.checked)}
+                    />
+                    <span className="ml-2">Task List</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                      checked={dataManagementOptions.export.dailySchedule}
+                      onChange={(e) => handleDataOptionChange('export', 'dailySchedule', e.target.checked)}
+                    />
+                    <span className="ml-2">Daily Schedule</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                      checked={dataManagementOptions.export.activityLogs}
+                      onChange={(e) => handleDataOptionChange('export', 'activityLogs', e.target.checked)}
+                    />
+                    <span className="ml-2">Activity Logs</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                      checked={dataManagementOptions.export.pomodoroSettings}
+                      onChange={(e) => handleDataOptionChange('export', 'pomodoroSettings', e.target.checked)}
+                    />
+                    <span className="ml-2">Pomodoro Settings</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                      checked={dataManagementOptions.export.subTaskDetails}
+                      onChange={(e) => handleDataOptionChange('export', 'subTaskDetails', e.target.checked)}
+                    />
+                    <span className="ml-2">Sub-Task Details (Ad-hoc)</span>
+                  </label>
+                </div>
+                <button
+                  onClick={handleExportData}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-md shadow-md hover:bg-blue-600 transition-colors duration-200 flex items-center justify-center mt-4"
+                >
+                  <Download size={20} className="mr-2" /> Export Selected Data
+                </button>
+
+                <h3 className="text-lg font-semibold text-indigo-700 mt-6 mb-2">Import Options</h3>
+                <div className="grid grid-cols-2 gap-2 text-sm text-gray-700">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                      checked={dataManagementOptions.import.tasks}
+                      onChange={(e) => handleDataOptionChange('import', 'tasks', e.target.checked)}
+                    />
+                    <span className="ml-2">Task List</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                      checked={dataManagementOptions.import.dailySchedule}
+                      onChange={(e) => handleDataOptionChange('import', 'dailySchedule', e.target.checked)}
+                    />
+                    <span className="ml-2">Daily Schedule</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                      checked={dataManagementOptions.import.activityLogs}
+                      onChange={(e) => handleDataOptionChange('import', 'activityLogs', e.target.checked)}
+                    />
+                    <span className="ml-2">Activity Logs</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                      checked={dataManagementOptions.import.pomodoroSettings}
+                      onChange={(e) => handleDataOptionChange('import', 'pomodoroSettings', e.target.checked)}
+                    />
+                    <span className="ml-2">Pomodoro Settings</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                      checked={dataManagementOptions.import.subTaskDetails}
+                      onChange={(e) => handleDataOptionChange('import', 'subTaskDetails', e.target.checked)}
+                    />
+                    <span className="ml-2">Sub-Task Details (Ad-hoc)</span>
+                  </label>
+                </div>
+                <label htmlFor="importFile" className="px-4 py-2 bg-purple-500 text-white rounded-md shadow-md hover:bg-purple-600 transition-colors duration-200 flex items-center justify-center cursor-pointer mt-4">
+                  <Upload size={20} className="mr-2" /> Import Data
+                  <input
+                    type="file"
+                    id="importFile"
+                    accept=".json"
+                    onChange={handleImportData}
+                    className="hidden"
+                  />
+                </label>
+              </div>
             </div>
           </div>
         )}
