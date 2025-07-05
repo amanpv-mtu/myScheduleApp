@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit, Plus, Trash2, Save, X, Clock, CheckCircle, AlertCircle, PlayCircle, StopCircle, RefreshCcw, Link, Upload, Download, BellRing } from 'lucide-react'; // Added new icons
+import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit, Plus, Trash2, Save, X, Clock, CheckCircle, AlertCircle, PlayCircle, StopCircle, RefreshCcw, Link, Upload, Download, BellRing, Square } from 'lucide-react'; // Added new icons
 
 // Tailwind CSS is assumed to be available in the environment.
 
@@ -56,53 +56,243 @@ const getTimeOfDayGroup = (timeStr) => {
   return ''; // Fallback
 };
 
-// Default schedule data (adjust as needed for your actual Houghton times)
-// IMPORTANT: These are the Kentwood, MI times you provided earlier.
-// You MUST update these to your actual Houghton, MI Masjid times for accuracy.
-const initialDefaultSchedule = { // Renamed to initialDefaultSchedule
-  // Common activities for all days
-  common: [
-    { id: 'wake-up', activity: 'Wake Up', plannedStart: '05:00', plannedEnd: '05:00', type: 'personal' },
-    { id: 'fajr-prep', activity: 'Hydrate, Wudu, Prepare for Fajr', plannedStart: '05:00', plannedEnd: '05:25', type: 'spiritual' },
-    { id: 'fajr-prayer', activity: 'Fajr Iqamah & Prayer', plannedStart: '05:25', plannedEnd: '05:45', type: 'spiritual' },
-    { id: 'quran-morning', activity: 'Quran Recitation & Reflection (Morning)', plannedStart: '05:45', plannedEnd: '06:00', type: 'spiritual' },
-    { id: 'morning-exercise', activity: 'Morning Exercise', plannedStart: '06:00', plannedEnd: '06:30', type: 'physical' },
-    { id: 'breakfast', activity: 'Breakfast & Plan Day', plannedStart: '06:30', plannedEnd: '07:00', type: 'personal' },
-    { id: 'deep-work-1', activity: 'Deep Work Mode Block 1', plannedStart: '07:00', plannedEnd: '09:30', type: 'academic' }, // Renamed
-    { id: 'break-1', activity: 'Break / Movement', plannedStart: '09:30', plannedEnd: '09:45', type: 'personal' },
-    { id: 'deep-work-2', activity: 'Deep Work Mode Block 2', plannedStart: '09:45', plannedEnd: '12:15', type: 'academic' }, // Renamed
-    { id: 'lunch', activity: 'Lunch Prep & Eat', plannedStart: '12:15', plannedEnd: '13:15', type: 'personal' },
-    { id: 'dhuhr-prep', activity: 'Wind down / Prepare for Dhuhr / Family Time', plannedStart: '13:15', plannedEnd: '14:25', type: 'personal' },
-    { id: 'dhuhr-prayer', activity: 'Dhuhr Iqamah & Prayer', plannedStart: '14:25', plannedEnd: '14:45', type: 'spiritual' },
-    { id: 'short-break-after-dhuhr', activity: 'Short Break', plannedStart: '14:45', plannedEnd: '15:00', type: 'personal' },
-    { id: 'power-nap', activity: 'Power Nap', plannedStart: '15:00', plannedEnd: '15:30', type: 'personal' },
-    { id: 'deep-work-3', activity: 'Deep Work Mode Flexible Work Block', plannedStart: '15:30', plannedEnd: '17:00', type: 'academic' }, // Renamed
-    { id: 'flexible-afternoon', activity: 'Flexible Block / Errands / Relax / Family Time', plannedStart: '17:00', plannedEnd: '19:25', type: 'personal' },
-    { id: 'asr-prayer', activity: 'Asr Iqamah & Prayer', plannedStart: '19:25', plannedEnd: '19:45', type: 'spiritual' },
-    { id: 'evening-exercise', activity: 'Evening Exercise', plannedStart: '19:45', plannedEnd: '20:15', type: 'physical' },
-    { id: 'dinner', activity: 'Dinner Prep & Eat (with Family)', plannedStart: '20:15', plannedEnd: '21:15', type: 'personal' },
-    { id: 'family-evening', activity: 'Family Time / Light Socializing', plannedStart: '21:15', plannedEnd: '21:45', type: 'personal' },
-    { id: 'maghrib-prep', activity: 'Wind down / Prepare for Maghrib', plannedStart: '21:45', plannedEnd: '21:55', type: 'spiritual' },
-    { id: 'maghrib-prayer', activity: 'Maghrib Iqamah & Prayer', plannedStart: '21:55', plannedEnd: '22:15', type: 'spiritual' },
-    { id: 'quran-evening', activity: 'Evening Routine / Quran / Prepare for Bed', plannedStart: '22:15', plannedEnd: '23:15', type: 'spiritual' },
-    { id: 'isha-prep', activity: 'Prepare for Isha', plannedStart: '23:15', plannedEnd: '23:25', type: 'spiritual' },
-    { id: 'isha-prayer', activity: 'Isha Iqamah & Prayer', plannedStart: '23:25', plannedEnd: '23:45', type: 'spiritual' },
-    { id: 'plan-next-day', activity: 'Plan Next Day', plannedStart: '23:45', plannedEnd: '23:55', type: 'personal' }, // Added new activity
-    { id: 'pre-sleep', activity: 'Pre-Sleep Routine', plannedStart: '23:55', plannedEnd: '00:00', type: 'personal' }, // Adjusted start time
-    { id: 'sleep', activity: 'Lights Out / Sleep', plannedStart: '00:00', plannedEnd: '05:00', type: 'personal' },
-  ],
-  // Specific activities for soccer days
-  soccerDays: [
-    { id: 'soccer-game', activity: 'Soccer Game (including travel, warm-up, cool-down, shower)', plannedStart: '20:00', plannedEnd: '22:00', type: 'physical' },
-  ],
-  // Specific activities for Jumu'ah (Friday)
-  jumuah: [
-    { id: 'jumuah-prayer', activity: 'Jumu\'ah Iqamah & Prayer', plannedStart: '14:40', plannedEnd: '15:00', type: 'spiritual' },
-  ]
+// Helper to convert HH:MM string to total minutes from midnight
+const timeToMinutes = (timeStr) => {
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  return hours * 60 + minutes;
+};
+
+// Helper to convert total minutes to HH:MM string
+const minutesToTime = (totalMinutes) => {
+  const hours = Math.floor(totalMinutes / 60) % 24; // Handle wrap-around for 24:00 becoming 00:00
+  const minutes = totalMinutes % 60;
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+};
+
+const getPlannedDuration = (plannedStart, plannedEnd, dateContext) => {
+    const start = parseTime(plannedStart, dateContext);
+    const end = parseTime(plannedEnd, dateContext);
+    if (end < start) {
+      end.setDate(end.getDate() + 1);
+    }
+    const diffMs = end - start;
+    const diffHours = diffMs / (1000 * 60 * 60);
+    return diffHours;
 };
 
 // Max duration for a sub-block in minutes
 const MAX_SUB_BLOCK_MINUTES = 30;
+
+// Default schedule data (adjust as needed for your actual Houghton times)
+// IMPORTANT: These are the Kentwood, MI times you provided earlier.
+// You MUST update these to your actual Houghton, MI Masjid times for accuracy.
+const initialDefaultSchedule = {
+  // Weekday schedule (Mon-Thu)
+  weekday: [
+    { id: 'wake-up', activity: 'Wake Up', plannedStart: '05:00', plannedEnd: '05:00', type: 'personal', recurrenceType: 'daily', recurrenceDays: [], constraintType: 'hard' },
+    { id: 'fajr-prep', activity: 'Hydrate, Wudu, Prepare for Fajr', plannedStart: '05:00', plannedEnd: '05:25', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'fajr-prayer', activity: 'Fajr Iqamah & Prayer', plannedStart: '05:25', plannedEnd: '05:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'quran-morning', activity: 'Quran Recitation & Reflection (Morning)', plannedStart: '05:45', plannedEnd: '06:00', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'morning-exercise', activity: 'Morning Exercise', plannedStart: '06:00', plannedEnd: '06:30', type: 'physical', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'breakfast', activity: 'Breakfast & Plan Day', plannedStart: '06:30', plannedEnd: '07:00', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'deep-work-1', activity: 'Deep Work Mode Block 1', plannedStart: '07:00', plannedEnd: '09:30', type: 'academic', recurrenceType: 'weekly', recurrenceDays: [1, 2, 3, 4], constraintType: 'adjustable' }, // Mon-Thu
+    { id: 'break-1', activity: 'Break / Movement', plannedStart: '09:30', plannedEnd: '09:45', type: 'personal', recurrenceType: 'weekly', recurrenceDays: [1, 2, 3, 4], constraintType: 'adjustable' },
+    { id: 'deep-work-2', activity: 'Deep Work Mode Block 2', plannedStart: '09:45', plannedEnd: '12:15', type: 'academic', recurrenceType: 'weekly', recurrenceDays: [1, 2, 3, 4], constraintType: 'adjustable' }, // Mon-Thu
+    { id: 'lunch', activity: 'Lunch Prep & Eat', plannedStart: '12:15', plannedEnd: '13:15', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'dhuhr-prep', activity: 'Wind down / Prepare for Dhuhr / Family Time', plannedStart: '13:15', plannedEnd: '14:25', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'dhuhr-prayer', activity: 'Dhuhr Iqamah & Prayer', plannedStart: '14:25', plannedEnd: '14:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'short-break-after-dhuhr', activity: 'Short Break', plannedStart: '14:45', plannedEnd: '15:00', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'power-nap', activity: 'Power Nap', plannedStart: '15:00', plannedEnd: '15:30', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'deep-work-3', activity: 'Deep Work Mode Flexible Work Block', plannedStart: '15:30', plannedEnd: '17:00', type: 'academic', recurrenceType: 'weekly', recurrenceDays: [1, 2, 3, 4], constraintType: 'adjustable' }, // Mon-Thu
+    { id: 'flexible-afternoon', activity: 'Flexible Block / Errands / Relax / Family Time', plannedStart: '17:00', plannedEnd: '19:25', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'asr-prayer', activity: 'Asr Iqamah & Prayer', plannedStart: '19:25', plannedEnd: '19:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'evening-exercise', activity: 'Evening Exercise', plannedStart: '19:45', plannedEnd: '20:15', type: 'physical', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'dinner', activity: 'Dinner Prep & Eat (with Family)', plannedStart: '20:15', plannedEnd: '21:15', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'family-evening', activity: 'Family Time / Light Socializing', plannedStart: '21:15', plannedEnd: '21:45', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'maghrib-prep', activity: 'Wind down / Prepare for Maghrib', plannedStart: '21:45', plannedEnd: '21:55', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'maghrib-prayer', activity: 'Maghrib Iqamah & Prayer', plannedStart: '21:55', plannedEnd: '22:15', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'quran-evening', activity: 'Evening Routine / Quran / Prepare for Bed', plannedStart: '22:15', plannedEnd: '23:15', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'isha-prep', activity: 'Prepare for Isha', plannedStart: '23:15', plannedEnd: '23:25', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'isha-prayer', activity: 'Isha Iqamah & Prayer', plannedStart: '23:25', plannedEnd: '23:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'plan-next-day', activity: 'Plan Next Day', plannedStart: '23:45', plannedEnd: '23:55', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'pre-sleep', activity: 'Pre-Sleep Routine', plannedStart: '23:55', plannedEnd: '00:00', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'sleep', activity: 'Lights Out / Sleep', plannedStart: '00:00', plannedEnd: '05:00', type: 'personal', recurrenceType: 'daily', constraintType: 'hard' },
+  ],
+  // Weekend schedule (Sat, Sun)
+  weekend: [
+    { id: 'wake-up-weekend', activity: 'Wake Up (Weekend)', plannedStart: '07:00', plannedEnd: '07:00', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'fajr-prayer-weekend', activity: 'Fajr Iqamah & Prayer', plannedStart: '05:25', plannedEnd: '05:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'quran-morning-weekend', activity: 'Quran Recitation & Reflection (Weekend Morning)', plannedStart: '07:00', plannedEnd: '07:30', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'breakfast-weekend', activity: 'Breakfast (Weekend)', plannedStart: '07:30', plannedEnd: '08:30', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'flexible-morning-weekend', activity: 'Flexible Morning Block (Weekend)', plannedStart: '08:30', plannedEnd: '12:00', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'lunch-weekend', activity: 'Lunch (Weekend)', plannedStart: '12:00', plannedEnd: '13:00', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'dhuhr-prayer-weekend', activity: 'Dhuhr Iqamah & Prayer', plannedStart: '14:25', plannedEnd: '14:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'flexible-afternoon-weekend', activity: 'Flexible Afternoon Block (Weekend)', plannedStart: '15:00', plannedEnd: '19:00', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'asr-prayer-weekend', activity: 'Asr Iqamah & Prayer', plannedStart: '19:25', plannedEnd: '19:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'dinner-weekend', activity: 'Dinner (Weekend)', plannedStart: '20:15', plannedEnd: '21:15', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'maghrib-prayer-weekend', activity: 'Maghrib Iqamah & Prayer', plannedStart: '21:55', plannedEnd: '22:15', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'isha-prayer-weekend', activity: 'Isha Iqamah & Prayer', plannedStart: '23:25', plannedEnd: '23:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'sleep-weekend', activity: 'Lights Out / Sleep (Weekend)', plannedStart: '00:00', plannedEnd: '07:00', type: 'personal', recurrenceType: 'daily', constraintType: 'hard' },
+  ],
+  // Jumu'ah schedule (Friday)
+  jumuah: [
+    { id: 'wake-up-jumuah', activity: 'Wake Up', plannedStart: '05:00', plannedEnd: '05:00', type: 'personal', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'fajr-prep-jumuah', activity: 'Hydrate, Wudu, Prepare for Fajr', plannedStart: '05:00', plannedEnd: '05:25', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'fajr-prayer-jumuah', activity: 'Fajr Iqamah & Prayer', plannedStart: '05:25', plannedEnd: '05:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'quran-morning-jumuah', activity: 'Quran Recitation & Reflection (Morning)', plannedStart: '05:45', plannedEnd: '06:00', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'morning-exercise-jumuah', activity: 'Morning Exercise', plannedStart: '06:00', plannedEnd: '06:30', type: 'physical', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'breakfast-jumuah', activity: 'Breakfast & Plan Day', plannedStart: '06:30', plannedEnd: '07:00', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'deep-work-1-jumuah', activity: 'Deep Work Mode Block 1', plannedStart: '07:00', plannedEnd: '09:30', type: 'academic', recurrenceType: 'weekly', recurrenceDays: [5], constraintType: 'adjustable' }, // Friday
+    { id: 'break-1-jumuah', activity: 'Break / Movement', plannedStart: '09:30', plannedEnd: '09:45', type: 'personal', recurrenceType: 'weekly', recurrenceDays: [5], constraintType: 'adjustable' },
+    { id: 'deep-work-2-jumuah', activity: 'Deep Work Mode Block 2', plannedStart: '09:45', plannedEnd: '12:15', type: 'academic', recurrenceType: 'weekly', recurrenceDays: [5], constraintType: 'adjustable' }, // Friday
+    { id: 'jumuah-prep', activity: 'Prepare for Jumu\'ah', plannedStart: '12:15', plannedEnd: '14:30', type: 'spiritual', recurrenceType: 'weekly', recurrenceDays: [5], constraintType: 'adjustable' },
+    { id: 'jumuah-prayer', activity: 'Jumu\'ah Iqamah & Prayer', plannedStart: '14:40', plannedEnd: '15:00', type: 'spiritual', recurrenceType: 'weekly', recurrenceDays: [5], constraintType: 'hard' }, // Friday (5)
+    { id: 'lunch-jumuah', activity: 'Lunch (After Jumu\'ah)', plannedStart: '15:00', plannedEnd: '16:00', type: 'personal', recurrenceType: 'weekly', recurrenceDays: [5], constraintType: 'adjustable' },
+    { id: 'flexible-afternoon-jumuah', activity: 'Flexible Block / Errands / Relax / Family Time', plannedStart: '16:00', plannedEnd: '19:25', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'asr-prayer-jumuah', activity: 'Asr Iqamah & Prayer', plannedStart: '19:25', plannedEnd: '19:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'evening-exercise-jumuah', activity: 'Evening Exercise', plannedStart: '19:45', plannedEnd: '20:15', type: 'physical', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'dinner-jumuah', activity: 'Dinner Prep & Eat (with Family)', plannedStart: '20:15', plannedEnd: '21:15', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'family-evening-jumuah', activity: 'Family Time / Light Socializing', plannedStart: '21:15', plannedEnd: '21:45', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'maghrib-prep-jumuah', activity: 'Wind down / Prepare for Maghrib', plannedStart: '21:45', plannedEnd: '21:55', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'maghrib-prayer-jumuah', activity: 'Maghrib Iqamah & Prayer', plannedStart: '21:55', plannedEnd: '22:15', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'quran-evening-jumuah', activity: 'Evening Routine / Quran / Prepare for Bed', plannedStart: '22:15', plannedEnd: '23:15', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'isha-prep-jumuah', activity: 'Prepare for Isha', plannedStart: '23:15', plannedEnd: '23:25', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'isha-prayer-jumuah', activity: 'Isha Iqamah & Prayer', plannedStart: '23:25', plannedEnd: '23:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'plan-next-day-jumuah', activity: 'Plan Next Day', plannedStart: '23:45', plannedEnd: '23:55', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'pre-sleep-jumuah', activity: 'Pre-Sleep Routine', plannedStart: '23:55', plannedEnd: '00:00', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'sleep-jumuah', activity: 'Lights Out / Sleep', plannedStart: '00:00', plannedEnd: '05:00', type: 'personal', recurrenceType: 'daily', constraintType: 'hard' },
+  ],
+  // Fasting day schedule (initially copied from weekday, then adjusted)
+  fasting: [], // This will be dynamically populated from weekday if not already saved
+  // Specific activities that override based on actual day of week, regardless of selected planner type
+  overrides: {
+    soccerDays: [
+      { id: 'soccer-game', activity: 'Soccer Game (including travel, warm-up, cool-down, shower)', plannedStart: '20:00', plannedEnd: '22:00', type: 'physical', recurrenceType: 'weekly', recurrenceDays: [3, 6], constraintType: 'hard' }, // Wednesday (3) or Saturday (6)
+    ],
+  }
+};
+
+/**
+ * Generates a daily schedule based on a given date, template, and fasting status.
+ * @param {Date} date The date for which to generate the schedule.
+ * @param {string|null} templateType Optional. The specific template type to use ('weekday', 'weekend', 'jumuah', 'fasting'). If null, it's auto-detected.
+ * @param {boolean} considerFasting Whether to apply fasting day adjustments if the date is marked as fasting.
+ * @param {object} plannerSchedule The full planner schedule object from state.
+ * @param {object} dailyCustomSchedules The daily custom schedules object from state.
+ * @param {object} fastingDates The fasting dates object from state.
+ * @returns {Array<Object>} The generated daily schedule.
+ */
+const generateScheduleForDate = (date, templateType, considerFasting, plannerSchedule, dailyCustomSchedules, fastingDates) => {
+    const dateKey = formatDateToYYYYMMDD(date);
+    const isFastingDay = !!fastingDates[dateKey];
+    
+    let initialActivities = [];
+
+    // Prioritize daily custom schedules
+    if (dailyCustomSchedules[dateKey] && dailyCustomSchedules[dateKey].length > 0) {
+        initialActivities = JSON.parse(JSON.stringify(dailyCustomSchedules[dateKey]));
+    } else {
+        // Determine base template if no custom schedule or no templateType provided
+        let baseTemplateKey = templateType;
+        if (!baseTemplateKey) {
+            const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+            if (dayOfWeek === 5) { // Friday
+                baseTemplateKey = 'jumuah';
+            } else if (dayOfWeek === 0 || dayOfWeek === 6) { // Sunday or Saturday
+                baseTemplateKey = 'weekend';
+            } else { // Monday-Thursday
+                baseTemplateKey = 'weekday';
+            }
+        }
+
+        // Apply fasting template if it's a fasting day and the template exists
+        if (considerFasting && isFastingDay && plannerSchedule.fasting && plannerSchedule.fasting.length > 0) {
+            baseTemplateKey = 'fasting';
+        }
+
+        initialActivities = JSON.parse(JSON.stringify(plannerSchedule[baseTemplateKey] || []));
+    }
+
+    // Filter weekly recurring activities based on current day of week
+    let filteredActivities = initialActivities.filter(activity => {
+        if (activity.recurrenceType === 'weekly' && activity.recurrenceDays && activity.recurrenceDays.length > 0) {
+            return activity.recurrenceDays.includes(date.getDay());
+        }
+        return true; // Include daily and none recurrence types
+    });
+
+    // Identify all override base IDs that are applicable for today
+    const dayOfWeek = date.getDay();
+    const applicableOverrideBaseIds = new Set(
+        (plannerSchedule.overrides.soccerDays || [])
+            .filter(override => override.recurrenceDays.includes(dayOfWeek))
+            .map(override => override.id) // e.g., 'soccer-game'
+    );
+
+    // Filter out any activities from the current schedule that have a base ID matching an applicable override
+    // This prevents the template's 'soccer-game' from appearing alongside the override's 'soccer-game-YYYY-MM-DD'
+    let activitiesWithoutOverrides = filteredActivities.filter(activity =>
+        !applicableOverrideBaseIds.has(activity.id) // Check if activity.id is a base override ID
+    );
+
+    // Subdivide flexible blocks (if not already subdivided by daily custom schedule)
+    let finalSchedule = [];
+    activitiesWithoutOverrides.forEach(activity => {
+        const startMinutes = timeToMinutes(activity.plannedStart);
+        let endMinutes = timeToMinutes(activity.plannedEnd);
+        if (endMinutes < startMinutes) endMinutes += 1440; // Handle midnight wrap
+        const durationMinutes = endMinutes - startMinutes;
+
+        if ((activity.activity.includes('Deep Work Mode Flexible Work Block') || activity.activity.includes('Flexible Block / Errands / Relax / Family Time')) && durationMinutes > MAX_SUB_BLOCK_MINUTES) {
+            let currentSubStartMinutes = startMinutes;
+            let partCounter = 1;
+            while (currentSubStartMinutes < endMinutes) {
+                let subEndMinutes = Math.min(currentSubStartMinutes + MAX_SUB_BLOCK_MINUTES, endMinutes);
+                // If remaining duration for the last part is very small, merge it with the current part
+                if (endMinutes - subEndMinutes < 15 && endMinutes - subEndMinutes > 0) {
+                    subEndMinutes = endMinutes;
+                }
+                finalSchedule.push({
+                    ...activity,
+                    id: `${activity.id}-part-${partCounter}`,
+                    originalActivityId: activity.id, // Link to original activity
+                    activity: `${activity.activity} (Part ${partCounter})`,
+                    plannedStart: minutesToTime(currentSubStartMinutes),
+                    plannedEnd: minutesToTime(subEndMinutes),
+                    durationMinutes: subEndMinutes - currentSubStartMinutes,
+                });
+                currentSubStartMinutes = subEndMinutes;
+                partCounter++;
+            }
+        } else {
+            finalSchedule.push({
+                ...activity,
+                durationMinutes: durationMinutes,
+            });
+        }
+    });
+
+    // Now, add the uniquely ID'd override activities
+    (plannerSchedule.overrides.soccerDays || []).forEach(override => {
+        if (override.recurrenceDays.includes(dayOfWeek)) {
+            const uniqueOverrideId = `${override.id}-${dateKey}`;
+            // Ensure no duplicate override activity is added if it already exists from a previous generation
+            if (!finalSchedule.some(act => act.id === uniqueOverrideId)) {
+                finalSchedule.push({
+                    ...override,
+                    id: uniqueOverrideId,
+                    durationMinutes: getPlannedDuration(override.plannedStart, override.plannedEnd, date) * 60,
+                });
+            }
+        }
+    });
+
+    // Sort the final schedule by planned start time
+    finalSchedule.sort((a, b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedEnd));
+
+    return finalSchedule;
+};
+
 
 function App() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -129,8 +319,13 @@ function App() {
     mode: 'work', // 'work', 'short_break', 'long_break'
     timeLeft: pomodoroSettings.work * 60,
     pomodorosCompleted: 0,
+    showAlert: false, // NEW: For showing alert modal
+    alertMessage: '', // NEW: Message for alert modal
+    nextMode: null, // NEW: Stores the next mode after an alert
+    nextTimeLeft: 0, // NEW: Stores the next timeLeft after an alert
+    linkedActivityId: null, // NEW: Tracks if Pomodoro is linked to a schedule activity
   });
-  const [activeTab, setActiveTab] = useState('schedule'); // 'schedule', 'report', 'settings', 'planner', 'tasks'
+  const [activeTab, setActiveTab] = useState('schedule'); // Changed default to 'schedule'
   const [reportDate, setReportDate] = useState(new Date());
   const intervalRef = useRef(null);
   const audioRef = useRef(new Audio('https://www.soundjay.com/buttons/beep-07.mp3')); // Simple beep sound
@@ -160,18 +355,57 @@ function App() {
   const [plannerSchedule, setPlannerSchedule] = useState(() => {
     try {
       const savedPlannerSchedule = localStorage.getItem('plannerSchedule');
-      // If a saved schedule exists, parse it. Otherwise, use a deep copy of the initial default common schedule.
-      return savedPlannerSchedule ? JSON.parse(savedPlannerSchedule) : JSON.parse(JSON.stringify(initialDefaultSchedule.common));
+      const parsedSchedule = savedPlannerSchedule ? JSON.parse(savedPlannerSchedule) : JSON.parse(JSON.stringify(initialDefaultSchedule));
+
+      // Initialize 'fasting' if it's empty or missing in saved data, by copying from 'weekday'
+      if (!parsedSchedule.fasting || parsedSchedule.fasting.length === 0) {
+        parsedSchedule.fasting = JSON.parse(JSON.stringify(initialDefaultSchedule.weekday));
+        // Add default suhoor and iftar if they don't exist
+        const suhoorExists = parsedSchedule.fasting.some(act => act.id === 'suhoor');
+        const iftarExists = parsedSchedule.fasting.some(act => act.id === 'iftar');
+        if (!suhoorExists) {
+            parsedSchedule.fasting.push({ id: 'suhoor', activity: 'Suhoor (Pre-dawn meal)', plannedStart: '04:00', plannedEnd: '04:30', type: 'personal', recurrenceType: 'none', constraintType: 'hard' });
+        }
+        if (!iftarExists) {
+            parsedSchedule.fasting.push({ id: 'iftar', activity: 'Iftar (Breaking fast)', plannedStart: '21:00', plannedEnd: '21:30', type: 'personal', recurrenceType: 'none', constraintType: 'hard' });
+        }
+      }
+      return parsedSchedule;
     } catch (error) {
       console.error("Failed to parse plannerSchedule from localStorage:", error);
-      return JSON.parse(JSON.stringify(initialDefaultSchedule.common)); // Fallback to default
+      return JSON.parse(JSON.stringify(initialDefaultSchedule)); // Fallback to default
     }
   });
+
+  // NEW: State for active day type in the Day Planner tab (for templates)
+  const [activePlannerDayType, setActivePlannerDayType] = useState('weekday'); // 'weekday', 'weekend', 'jumuah', 'fasting'
+  // NEW: State for day planner view mode
+  const [plannerViewMode, setPlannerViewMode] = useState('daily'); // 'templates' or 'daily' - Default to 'daily' as requested
+
+  // NEW: State for the date selected in the daily planner editor
+  const [selectedPlannerDate, setSelectedPlannerDate] = useState(new Date());
+  // NEW: State for daily custom schedules (overrides specific days)
+  const [dailyCustomSchedules, setDailyCustomSchedules] = useState(() => {
+    try {
+      const savedCustomSchedules = localStorage.getItem('dailyCustomSchedules');
+      return savedCustomSchedules ? JSON.parse(savedCustomSchedules) : {};
+    } catch (error) {
+      console.error("Failed to parse dailyCustomSchedules from localStorage:", error);
+      return {};
+    }
+  });
+
+  // NEW: State for the currently selected base template in the daily plan editor
+  const [selectedBaseTemplate, setSelectedBaseTemplate] = useState('weekday');
+
 
   // State for the activity being edited in the planner modal
   const [editingActivity, setEditingActivity] = useState(null);
   // State to control the visibility of the planner modal
   const [isPlannerModalOpen, setIsPlannerModalOpen] = useState(false);
+  // State to indicate if the modal is editing a template or a daily override
+  const [isEditingDailySchedule, setIsEditingDailySchedule] = useState(false);
+
 
   // NEW: State for the broader task list
   const [projectTasks, setProjectTasks] = useState(() => {
@@ -194,7 +428,7 @@ function App() {
   const [showEisenhowerMatrix, setShowEisenhowerMatrix] = useState(false);
 
   // NEW: State for the Assign Task Modal
-  const [isAssignTaskModalOpen, setIsAssignTaskModalOpen] = useState(false);
+  const [isAssignTaskModalOpen, setIsAssignTaskModal] = useState(false);
   const [assigningToActivity, setAssigningToActivity] = useState(null); // { date: Date, activityId: string }
   const [assigningFromTask, setAssigningFromTask] = useState(null); // { taskId: string, subtaskId: string }
 
@@ -206,6 +440,8 @@ function App() {
       activityLogs: true,
       pomodoroSettings: true,
       subTaskDetails: true,
+      dailyCustomSchedules: true, // Added for export
+      fastingDates: true,
     },
     import: {
       tasks: true,
@@ -213,6 +449,8 @@ function App() {
       activityLogs: true,
       pomodoroSettings: true,
       subTaskDetails: true,
+      dailyCustomSchedules: true, // Added for import
+      fastingDates: true,
     }
   });
 
@@ -224,6 +462,17 @@ function App() {
 
   // NEW: State for audio enablement
   const [audioEnabled, setAudioEnabled] = useState(false);
+
+  // NEW: State to track fasting days (YYYY-MM-DD string as key, boolean as value)
+  const [fastingDates, setFastingDates] = useState(() => {
+    try {
+      const savedFastingDates = localStorage.getItem('fastingDates');
+      return savedFastingDates ? JSON.parse(savedFastingDates) : {};
+    } catch (error) {
+      console.error("Failed to parse fastingDates from localStorage:", error);
+      return {};
+    }
+  });
 
 
   // Ref for the table container to enable scrolling
@@ -240,6 +489,11 @@ function App() {
       [groupName]: !prev[groupName]
     }));
   };
+
+  // NEW: State for dragging activities in the visual planner
+  const [draggingActivity, setDraggingActivity] = useState(null); // { id: string, startY: number, initialTop: number, initialStart: string, initialEnd: string }
+  const [resizingActivity, setResizingActivity] = useState(null); // { id: string, startY: number, initialHeight: number, initialTop: number, type: 'top' | 'bottom', initialStart: string, initialEnd: string }
+  const plannerTimelineRef = useRef(null);
 
 
   // Save logs and settings to localStorage
@@ -270,6 +524,17 @@ function App() {
     localStorage.setItem('projectTasks', JSON.stringify(projectTasks));
   }, [projectTasks]);
 
+  // NEW: Save fastingDates to localStorage
+  useEffect(() => {
+    localStorage.setItem('fastingDates', JSON.stringify(fastingDates));
+  }, [fastingDates]);
+
+  // NEW: Save dailyCustomSchedules to localStorage
+  useEffect(() => {
+    localStorage.setItem('dailyCustomSchedules', JSON.stringify(dailyCustomSchedules));
+  }, [dailyCustomSchedules]);
+
+
   // Reset remindersShownToday when currentDate changes
   useEffect(() => {
     remindersShownToday.current = new Set();
@@ -292,6 +557,7 @@ function App() {
 
             let nextMode = prev.mode;
             let nextPomodorosCompleted = prev.pomodorosCompleted;
+            let alertMessage = '';
             let nextTimeLeft = 0;
 
             const currentBlock = dailyScheduleState.find(block => block.id === currentPomodoroBlockId);
@@ -301,78 +567,50 @@ function App() {
             const completedSegmentDuration = (prev.mode === 'work' ? pomodoroSettings.work : (prev.mode === 'short_break' ? pomodoroSettings.shortBreak : pomodoroSettings.longBreak)) * 60;
 
             // Update the time consumed for the current schedule block
-            setBlockTimeConsumed(prevConsumed => {
-                const newConsumed = prevConsumed + completedSegmentDuration;
-                const remaining = totalBlockDurationSeconds - newConsumed;
-
-                if (currentBlock && remaining <= 0) {
-                    setPomodoroTimer({ ...prev, running: false, timeLeft: 0 });
-                    setCurrentPomodoroBlockId(null);
-                    setBlockTimeConsumed(0);
-                    return 0;
-                }
-                return newConsumed;
-            });
-
-            const calculatedRemainingTime = totalBlockDurationSeconds - (blockTimeConsumed + completedSegmentDuration);
+            let newBlockTimeConsumed = prev.blockTimeConsumed + completedSegmentDuration;
+            let remainingBlockTime = totalBlockDurationSeconds - newBlockTimeConsumed;
 
             if (prev.mode === 'work') {
                 nextPomodorosCompleted++;
-                if (calculatedRemainingTime <= 0) {
-                    setPomodoroTimer({ ...prev, running: false, timeLeft: 0 });
-                    setCurrentPomodoroBlockId(null);
-                    setBlockTimeConsumed(0);
-                    return { ...prev, running: false, timeLeft: 0 };
-                }
+                alertMessage = "Work session ended! Time for a break.";
 
                 if (nextPomodorosCompleted % pomodoroSettings.longBreakInterval === 0) {
                     nextMode = 'long_break';
-                    nextTimeLeft = Math.min(pomodoroSettings.longBreak * 60, calculatedRemainingTime);
+                    nextTimeLeft = pomodoroSettings.longBreak * 60;
                 } else {
                     nextMode = 'short_break';
-                    nextTimeLeft = Math.min(pomodoroSettings.shortBreak * 60, calculatedRemainingTime);
+                    nextTimeLeft = pomodoroSettings.shortBreak * 60;
                 }
-
-                if (nextTimeLeft <= 0) {
-                    nextMode = 'work';
-                    nextTimeLeft = Math.min(pomodoroSettings.work * 60, calculatedRemainingTime);
-                    if (nextTimeLeft <= 0) {
-                        setPomodoroTimer({ ...prev, running: false, timeLeft: 0 });
-                        setCurrentPomodoroBlockId(null);
-                        setBlockTimeConsumed(0);
-                        return { ...prev, running: false, timeLeft: 0 };
-                    }
-                }
-
-            } else {
-                if (calculatedRemainingTime <= 0) {
-                    setPomodoroTimer({ ...prev, running: false, timeLeft: 0 });
-                    setCurrentPomodoroBlockId(null);
-                    setBlockTimeConsumed(0);
-                    return { ...prev, running: false, timeLeft: 0 };
-                }
-
+            } else { // Break ended
+                alertMessage = "Break ended! Time to get back to work.";
                 nextMode = 'work';
-                nextTimeLeft = Math.min(pomodoroSettings.work * 60, calculatedRemainingTime);
+                nextTimeLeft = pomodoroSettings.work * 60;
+            }
 
-                if (nextTimeLeft <= 0) {
-                    setPomodoroTimer({ ...prev, running: false, timeLeft: 0 });
-                    setCurrentPomodoroBlockId(null);
-                    setBlockTimeConsumed(0);
-                    return { ...prev, running: false, timeLeft: 0 };
+            // Adjust nextTimeLeft based on remaining block time if linked to a schedule activity
+            if (prev.linkedActivityId) {
+                if (remainingBlockTime <= 0) {
+                    // Block is fully consumed, end Pomodoro session
+                    return { ...prev, running: false, timeLeft: 0, showAlert: true, alertMessage: "Pomodoro session for this block has ended!", nextMode: null, nextTimeLeft: 0, linkedActivityId: null };
+                } else if (nextTimeLeft > remainingBlockTime) {
+                    nextTimeLeft = remainingBlockTime; // Shrink the next session to fit the block
+                    if (nextTimeLeft <= 0) { // If it becomes 0 or less, end session
+                        return { ...prev, running: false, timeLeft: 0, showAlert: true, alertMessage: "Pomodoro session for this block has ended!", nextMode: null, nextTimeLeft: 0, linkedActivityId: null };
+                    }
                 }
             }
 
-            setTimeout(() => {
-                setPomodoroTimer({
-                    running: true,
-                    mode: nextMode,
-                    timeLeft: nextTimeLeft,
-                    pomodorosCompleted: nextPomodorosCompleted,
-                });
-            }, 1000);
-
-            return { ...prev, running: false, mode: nextMode, timeLeft: nextTimeLeft, pomodorosCompleted: nextPomodorosCompleted };
+            // Set state to show alert and prepare for next session
+            return {
+                ...prev,
+                running: false, // Pause timer for alert
+                showAlert: true,
+                alertMessage: alertMessage,
+                nextMode: nextMode,
+                nextTimeLeft: nextTimeLeft,
+                pomodorosCompleted: nextPomodorosCompleted,
+                blockTimeConsumed: newBlockTimeConsumed, // Update consumed time
+            };
           }
         });
       }, 1000);
@@ -381,203 +619,30 @@ function App() {
     }
 
     return () => clearInterval(intervalRef.current);
-  }, [pomodoroTimer.running, pomodoroTimer.timeLeft, pomodoroTimer.mode, pomodoroSettings, currentPomodoroBlockId, dailyScheduleState, blockTimeConsumed, audioEnabled]);
+  }, [pomodoroTimer.running, pomodoroTimer.timeLeft, pomodoroTimer.mode, pomodoroSettings, currentPomodoroBlockId, dailyScheduleState, audioEnabled, pomodoroTimer.blockTimeConsumed, pomodoroTimer.linkedActivityId]);
 
 
-  const subdivideActivity = useCallback((activity, maxMinutes, dateContext) => {
-    const subBlocks = [];
-    let currentStart = parseTime(activity.plannedStart, dateContext);
-    let originalEnd = parseTime(activity.plannedEnd, dateContext);
-
-    if (originalEnd < currentStart) {
-      originalEnd.setDate(originalEnd.getDate() + 1);
-    }
-
-    let part = 1;
-    while (currentStart < originalEnd) {
-      let subBlockEnd = new Date(currentStart.getTime() + maxMinutes * 60 * 1000);
-      if (subBlockEnd > originalEnd) {
-        subBlockEnd = originalEnd;
-      }
-
-      const durationMinutes = (subBlockEnd.getTime() - currentStart.getTime()) / (60 * 1000);
-
-      let activityName = `${activity.activity} (Part ${part})`;
-      if (activity.type === 'academic') {
-        activityName = `${activity.activity.split(' (Pomodoro')[0].split(' (Part')[0]} (Pomodoro ${part})`;
-      } else if (activity.id === 'flexible-afternoon') {
-        activityName = `Flexible Block (Part ${part})`;
-      }
-
-      subBlocks.push({
-        ...activity,
-        id: `${activity.id}-part${part}`,
-        activity: activityName,
-        originalActivityId: activity.id,
-        plannedStart: formatTo24HourTime(currentStart),
-        plannedEnd: formatTo24HourTime(subBlockEnd),
-        durationMinutes: durationMinutes,
-      });
-
-      currentStart = subBlockEnd;
-      part++;
-    }
-    return subBlocks;
-  }, []);
-
-  useEffect(() => {
-    const dayOfWeek = currentDate.getDay(); // 0 for Sunday, 1 for Monday, etc.
-    const isSoccerDay = dayOfWeek === 3 || dayOfWeek === 6; // Wednesday (3) or Saturday (6)
-    const isJumuah = dayOfWeek === 5; // Friday (5)
-
-    let scheduleForDay = JSON.parse(JSON.stringify(plannerSchedule));
-
-    if (isSoccerDay) {
-      scheduleForDay = scheduleForDay.filter(
-        item => !(item.id === 'evening-exercise' || item.id === 'dinner' || item.id === 'family-evening' ||
-                  (parseTime(item.plannedStart, currentDate) >= parseTime('20:00', currentDate) && parseTime(item.plannedEnd, currentDate) <= parseTime('22:00', currentDate)))
-      );
-      const soccerGame = initialDefaultSchedule.soccerDays[0];
-      const insertIndex = scheduleForDay.findIndex(item => parseTime(item.plannedStart, currentDate) > parseTime(soccerGame.plannedStart, currentDate));
-      scheduleForDay.splice(insertIndex > -1 ? insertIndex : scheduleForDay.length, 0, soccerGame);
-
-      const soccerEndTime = parseTime(soccerGame.plannedEnd, currentDate);
-      const dinnerStartTime = new Date(soccerEndTime.getTime() + 15 * 60 * 1000);
-      const familyEveningStartTime = new Date(dinnerStartTime.getTime() + 60 * 60 * 1000);
-
-      const dinnerExists = scheduleForDay.some(item => item.id === 'dinner');
-      const familyEveningExists = scheduleForDay.some(item => item.id === 'family-evening');
-
-      if (!dinnerExists) {
-        scheduleForDay.push({
-          id: 'dinner',
-          activity: 'Dinner Prep & Eat (with Family) (After Soccer)',
-          plannedStart: formatTo24HourTime(dinnerStartTime),
-          plannedEnd: formatTo24HourTime(familyEveningStartTime),
-          type: 'personal'
-        });
-      }
-      if (!familyEveningExists) {
-        scheduleForDay.push({
-          id: 'family-evening',
-          activity: 'Family Time / Light Socializing (After Soccer)',
-          plannedStart: formatTo24HourTime(familyEveningStartTime),
-          plannedEnd: formatTo24HourTime(new Date(familyEveningStartTime.getTime() + 30 * 60 * 1000)),
-          type: 'personal'
-        });
-      }
-    }
-
-    if (isJumuah) {
-      scheduleForDay = scheduleForDay.filter(item => item.id !== 'dhuhr-prayer');
-      const jumuahPrayer = initialDefaultSchedule.jumuah[0];
-      const insertIndex = scheduleForDay.findIndex(item => parseTime(item.plannedStart, currentDate) > parseTime(jumuahPrayer.plannedStart, currentDate));
-      scheduleForDay.splice(insertIndex > -1 ? insertIndex : scheduleForDay.length, 0, jumuahPrayer);
-    }
-
-    // Custom sort logic to put activities spanning midnight at the end of the day
-    scheduleForDay.sort((a, b) => {
-      const timeA = parseTime(a.plannedStart, currentDate);
-      const timeB = parseTime(b.plannedStart, currentDate);
-
-      let sortableTimeA = timeA;
-      let sortableTimeB = timeB;
-
-      // If an activity starts before 5 AM, treat it as if it's on the "next" day for sorting purposes
-      // This ensures 'Lights Out / Sleep' (00:00 - 05:00) comes after activities ending near midnight
-      if (timeA.getHours() < 5) {
-        sortableTimeA = new Date(timeA);
-        sortableTimeA.setDate(sortableTimeA.getDate() + 1);
-      }
-      if (timeB.getHours() < 5) {
-        sortableTimeB = new Date(timeB);
-        sortableTimeB.setDate(sortableTimeB.getDate() + 1);
-      }
-
-      return sortableTimeA - sortableTimeB;
+  const startPomodoroSession = useCallback((mode, duration, linkedActivityId = null) => {
+    clearInterval(intervalRef.current); // Clear any existing interval
+    setPomodoroTimer({
+      running: true,
+      mode: mode,
+      timeLeft: duration * 60,
+      pomodorosCompleted: mode === 'work' ? pomodoroTimer.pomodorosCompleted : pomodoroTimer.pomodorosCompleted, // Don't reset on break start
+      showAlert: false,
+      alertMessage: '',
+      nextMode: null,
+      nextTimeLeft: 0,
+      linkedActivityId: linkedActivityId,
     });
-
-    let finalSchedule = [];
-    scheduleForDay.forEach(activity => {
-      const plannedDurationMinutes = getPlannedDuration(activity.plannedStart, activity.plannedEnd, currentDate) * 60;
-      if (plannedDurationMinutes > MAX_SUB_BLOCK_MINUTES && (activity.type === 'academic' || activity.id === 'flexible-afternoon')) {
-        finalSchedule = finalSchedule.concat(subdivideActivity(activity, MAX_SUB_BLOCK_MINUTES, currentDate));
-      } else {
-        finalSchedule.push({ ...activity, durationMinutes: plannedDurationMinutes });
-      }
-    });
-
-    setDailyScheduleState(finalSchedule);
-  }, [currentDate, subdivideActivity, plannerSchedule]);
-
-  useEffect(() => {
-    const updateCurrentBlockAndProgress = () => {
-      const now = new Date();
-      const estTimeStr = now.toLocaleString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-        timeZone: 'America/New_York'
-      });
-      const [estHours, estMinutes, estSeconds] = estTimeStr.split(':').map(Number);
-      const currentEstDate = new Date();
-      currentEstDate.setHours(estHours, estMinutes, estSeconds, 0);
-
-      let foundCurrentActivity = null;
-      dailyScheduleState.forEach(activity => {
-        const plannedStart = parseTime(activity.plannedStart, currentDate);
-        const plannedEnd = parseTime(activity.plannedEnd, currentDate);
-
-        const activityStartToday = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), plannedStart.getHours(), plannedStart.getMinutes(), 0, 0);
-        let activityEndToday = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), plannedEnd.getHours(), plannedEnd.getMinutes(), 0, 0);
-
-        // Handle activities that span across midnight
-        if (plannedEnd < plannedStart) {
-          activityEndToday.setDate(activityEndToday.getDate() + 1);
-        }
-
-        // Check for current activity
-        if (currentEstDate >= activityStartToday && currentEstDate < activityEndToday) {
-          foundCurrentActivity = activity.id;
-        }
-
-        // Check for reminders (5 minutes before planned start)
-        const reminderTime = new Date(activityStartToday.getTime() - 5 * 60 * 1000);
-        if (currentEstDate >= reminderTime && currentEstDate < activityStartToday) {
-            if (!remindersShownToday.current.has(activity.id)) {
-                setReminderActivity(activity);
-                setShowReminderModal(true);
-                if (audioEnabled) { // Only play if audio is enabled
-                  audioRef.current.play();
-                }
-                remindersShownToday.current.add(activity.id); // Mark as shown
-            }
-        }
-      });
-      setCurrentActivityId(foundCurrentActivity);
-    };
-
-    const interval = setInterval(updateCurrentBlockAndProgress, 1000);
-    updateCurrentBlockAndProgress();
-
-    return () => clearInterval(interval);
-  }, [dailyScheduleState, currentDate, audioRef, audioEnabled]); // Added audioEnabled to dependencies
-
-
-  useEffect(() => {
-    if (currentActivityId && activeTab === 'schedule' && activityRefs.current.has(currentActivityId)) {
-      const element = activityRefs.current.get(currentActivityId);
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
+    if (linkedActivityId) {
+        setCurrentPomodoroBlockId(linkedActivityId);
+        setBlockTimeConsumed(0); // Reset consumed time for new block
+    } else {
+        setCurrentPomodoroBlockId(null);
+        setBlockTimeConsumed(0);
     }
-  }, [currentActivityId, activeTab]);
-
-
-  const startPomodoro = () => {
-    setPomodoroTimer(prev => ({ ...prev, running: true }));
-  };
+  }, [pomodoroTimer.pomodorosCompleted]);
 
   const pausePomodoro = () => {
     setPomodoroTimer(prev => ({ ...prev, running: false }));
@@ -590,9 +655,44 @@ function App() {
       mode: 'work',
       timeLeft: pomodoroSettings.work * 60,
       pomodorosCompleted: 0,
+      showAlert: false,
+      alertMessage: '',
+      nextMode: null,
+      nextTimeLeft: 0,
+      linkedActivityId: null,
     });
     setCurrentPomodoroBlockId(null);
     setBlockTimeConsumed(0);
+  };
+
+  const continuePomodoro = () => {
+    setPomodoroTimer(prev => ({
+      ...prev,
+      running: true,
+      mode: prev.nextMode,
+      timeLeft: prev.nextTimeLeft,
+      showAlert: false,
+      alertMessage: '',
+      nextMode: null,
+      nextTimeLeft: 0,
+    }));
+  };
+
+  const endPomodoroSession = () => {
+    resetPomodoro();
+  };
+
+  const skipBreak = () => {
+    setPomodoroTimer(prev => ({
+      ...prev,
+      running: true,
+      mode: 'work',
+      timeLeft: pomodoroSettings.work * 60,
+      showAlert: false,
+      alertMessage: '',
+      nextMode: null,
+      nextTimeLeft: 0,
+    }));
   };
 
   const handlePomodoroSettingChange = (e) => {
@@ -644,22 +744,16 @@ function App() {
 
     if (type === 'start') {
       const activity = dailyScheduleState.find(a => a.id === activityId);
-      if (activity && activity.durationMinutes) {
+      if (activity && activity.type === 'academic') { // Only auto-start Pomodoro for academic blocks
         const totalBlockSeconds = Math.floor(activity.durationMinutes * 60);
-
-        setCurrentPomodoroBlockId(activityId);
-        setBlockTimeConsumed(0);
-
-        setPomodoroTimer(prev => ({
-          ...prev,
-          running: true,
-          mode: 'work',
-          timeLeft: Math.min(pomodoroSettings.work * 60, totalBlockSeconds),
-          pomodorosCompleted: 0,
-        }));
+        const firstPomodoroDuration = Math.min(pomodoroSettings.work * 60, totalBlockSeconds);
+        startPomodoroSession('work', firstPomodoroDuration / 60, activityId); // Pass activityId to link
+      } else {
+        // If not academic, just log start time without Pomodoro
+        resetPomodoro(); // Ensure Pomodoro is not running if not an academic block
       }
     } else if (type === 'end') {
-        setPomodoroTimer(prev => ({ ...prev, running: false })); // Stop Pomodoro when activity ends
+        setPomodoroTimer(prev => ({ ...prev, running: false, linkedActivityId: null })); // Stop Pomodoro when activity ends
         setCurrentPomodoroBlockId(null); // Disassociate Pomodoro from block
         setBlockTimeConsumed(0);
     } else if (type === 'reset') {
@@ -680,21 +774,25 @@ function App() {
     return 0;
   };
 
-  const getPlannedDuration = (plannedStart, plannedEnd, dateContext) => {
-    const start = parseTime(plannedStart, dateContext);
-    const end = parseTime(plannedEnd, dateContext);
-    if (end < start) {
-      end.setDate(end.getDate() + 1);
-    }
-    const diffMs = end - start;
-    const diffHours = diffMs / (1000 * 60 * 60);
-    return diffHours;
-  };
 
   const navigateDate = (days) => {
     const newDate = new Date(currentDate);
     newDate.setDate(newDate.getDate() + days);
     setCurrentDate(newDate);
+  };
+
+  // NEW: Toggle Fasting Day (now for selectedPlannerDate)
+  const handleToggleFastingDay = (date) => {
+    const dateYYYYMMDD = formatDateToYYYYMMDD(date);
+    setFastingDates(prev => {
+      const newFastingDates = { ...prev };
+      if (newFastingDates[dateYYYYMMDD]) {
+        delete newFastingDates[dateYYYYMMDD];
+      } else {
+        newFastingDates[dateYYYYMMDD] = true;
+      }
+      return newFastingDates;
+    });
   };
 
   const getReportData = useCallback(() => {
@@ -867,44 +965,135 @@ function App() {
     }
   };
 
-  const handleAddActivity = () => {
+  // --- Template Activity Handlers ---
+  const handleAddTemplateActivity = () => {
     setEditingActivity({
       id: `new-${Date.now()}`,
       activity: '',
       plannedStart: '09:00',
       plannedEnd: '10:00',
       type: 'personal',
+      recurrenceType: 'none',
+      recurrenceDays: [],
+      constraintType: 'adjustable',
       isNew: true,
+    });
+    setIsEditingDailySchedule(false);
+    setIsPlannerModalOpen(true);
+  };
+
+  const handleEditTemplateActivity = (activity) => {
+    setEditingActivity({
+      ...activity,
+      recurrenceType: activity.recurrenceType || 'none',
+      recurrenceDays: activity.recurrenceDays || [],
+      constraintType: activity.constraintType || 'adjustable',
     });
     setIsPlannerModalOpen(true);
   };
 
-  const handleEditActivity = (activity) => {
-    setEditingActivity({ ...activity });
-    setIsPlannerModalOpen(true);
-  };
-
-  const handleDeleteActivity = (activityId) => {
-    const confirmDelete = window.confirm('Are you sure you want to delete this activity?');
+  const handleDeleteTemplateActivity = (activityId) => {
+    const confirmDelete = window.confirm('Are you sure you want to delete this template activity?');
     if (confirmDelete) {
-      setPlannerSchedule(prevSchedule => prevSchedule.filter(act => act.id !== activityId));
+      setPlannerSchedule(prevSchedule => {
+        const updatedSchedule = { ...prevSchedule };
+        updatedSchedule[activePlannerDayType] = updatedSchedule[activePlannerDayType].filter(act => act.id !== activityId);
+        return updatedSchedule;
+      });
     }
   };
 
-  const handleSaveActivity = (updatedActivity) => {
+  const handleSaveTemplateActivity = (updatedActivity) => {
     setPlannerSchedule(prevSchedule => {
+      const updatedSchedule = { ...prevSchedule };
       if (updatedActivity.isNew) {
         const { isNew, ...newActivity } = updatedActivity;
-        return [...prevSchedule, { ...newActivity, id: crypto.randomUUID() }];
+        updatedSchedule[activePlannerDayType] = [...updatedSchedule[activePlannerDayType], { ...newActivity, id: crypto.randomUUID() }];
       } else {
-        return prevSchedule.map(act =>
+        updatedSchedule[activePlannerDayType] = updatedSchedule[activePlannerDayType].map(act =>
           act.id === updatedActivity.id ? updatedActivity : act
         );
       }
+      return updatedSchedule;
     });
     setIsPlannerModalOpen(false);
     setEditingActivity(null);
   };
+
+  // --- Daily Activity Handlers ---
+  const handleAddDailyActivity = () => {
+    setEditingActivity({
+      id: `new-${Date.now()}`,
+      activity: '',
+      plannedStart: '09:00',
+      plannedEnd: '10:00',
+      type: 'personal',
+      recurrenceType: 'none', // Daily overrides don't use recurrence
+      recurrenceDays: [],
+      constraintType: 'adjustable',
+      isNew: true,
+    });
+    setIsEditingDailySchedule(true);
+    setIsPlannerModalOpen(true);
+  };
+
+  const handleEditDailyActivity = (activity) => {
+    setEditingActivity({
+      ...activity,
+      recurrenceType: activity.recurrenceType || 'none',
+      recurrenceDays: activity.recurrenceDays || [],
+      constraintType: activity.constraintType || 'adjustable',
+    });
+    setIsEditingDailySchedule(true);
+    setIsPlannerModalOpen(true);
+  };
+
+  const handleDeleteDailyActivity = (activityId) => {
+    const confirmDelete = window.confirm('Are you sure you want to delete this activity for this specific day?');
+    if (confirmDelete) {
+      const dateKey = formatDateToYYYYMMDD(selectedPlannerDate);
+      setDailyCustomSchedules(prev => ({
+        ...prev,
+        [dateKey]: prev[dateKey].filter(act => act.id !== activityId)
+      }));
+    }
+  };
+
+  const handleSaveDailyActivity = (updatedActivity) => {
+    const dateKey = formatDateToYYYYMMDD(selectedPlannerDate);
+    setDailyCustomSchedules(prev => {
+      const currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] : [];
+      let newDaySchedule;
+
+      if (updatedActivity.isNew) {
+        const { isNew, ...newActivity } = updatedActivity;
+        newDaySchedule = [...currentDaySchedule, { ...newActivity, id: crypto.randomUUID() }];
+      } else {
+        newDaySchedule = currentDaySchedule.map(act =>
+          act.id === updatedActivity.id ? updatedActivity : act
+        );
+      }
+      return {
+        ...prev,
+        [dateKey]: newDaySchedule,
+      };
+    });
+    setIsPlannerModalOpen(false);
+    setEditingActivity(null);
+  };
+
+  // NEW: Apply Template to Daily Plan
+  const handleApplyTemplateToDailyPlan = () => {
+    const dateKey = formatDateToYYYYMMDD(selectedPlannerDate);
+    // Generate the schedule based on the selected template and the fasting status of the selected date
+    const generatedSchedule = generateScheduleForDate(selectedPlannerDate, selectedBaseTemplate, true, plannerSchedule, dailyCustomSchedules, fastingDates);
+    setDailyCustomSchedules(prev => ({
+      ...prev,
+      [dateKey]: generatedSchedule
+    }));
+    alert(`Template '${selectedBaseTemplate}' applied to ${selectedPlannerDate.toLocaleDateString()}!`);
+  };
+
 
   const handleCancelEdit = () => {
     setIsPlannerModalOpen(false);
@@ -938,6 +1127,7 @@ function App() {
   };
 
   const handleDeleteTask = (taskId) => {
+    // Use a custom modal for confirmation instead of window.confirm
     const confirmDelete = window.confirm('Are you sure you want to delete this task?');
     if (confirmDelete) {
       setProjectTasks(prevTasks => prevTasks.filter(task => task.id !== taskId));
@@ -1015,7 +1205,7 @@ function App() {
   const openAssignTaskModal = (activityToAssignTo = null, taskToAssign = null) => {
     setAssigningToActivity(activityToAssignTo); // This will be null if coming from tasks view
     setAssigningFromTask(taskToAssign); // This will be null if coming from schedule view
-    setIsAssignTaskModalOpen(true);
+    setIsAssignTaskModal(true);
   };
 
   const handleAssignTask = (selectedDate, selectedActivityId, selectedTaskId, selectedSubtaskId = null) => {
@@ -1077,7 +1267,7 @@ function App() {
         }));
     }
 
-    setIsAssignTaskModalOpen(false);
+    setIsAssignTaskModal(false);
     setAssigningToActivity(null);
     setAssigningFromTask(null);
   };
@@ -1174,6 +1364,8 @@ function App() {
     if (dataManagementOptions.export.dailySchedule) dataToExport.plannerSchedule = plannerSchedule;
     if (dataManagementOptions.export.pomodoroSettings) dataToExport.pomodoroSettings = pomodoroSettings;
     if (dataManagementOptions.export.subTaskDetails) dataToExport.subTaskDetails = subTaskDetails;
+    if (dataManagementOptions.export.fastingDates) dataToExport.fastingDates = fastingDates;
+    if (dataManagementOptions.export.dailyCustomSchedules) dataToExport.dailyCustomSchedules = dailyCustomSchedules; // Export daily custom schedules
 
     const jsonString = JSON.stringify(dataToExport, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
@@ -1201,6 +1393,7 @@ function App() {
         let skippedCount = 0;
         let message = "Import Summary:\n";
 
+        // Use a custom modal for confirmation instead of window.confirm
         if (window.confirm('Are you sure you want to import data? This will overwrite selected existing data categories.')) {
           if (dataManagementOptions.import.tasks && importedData.projectTasks) {
             setProjectTasks(importedData.projectTasks);
@@ -1247,6 +1440,25 @@ function App() {
               message += "- Sub-Task Details: Skipped (not found in file)\n";
           }
 
+          if (dataManagementOptions.import.fastingDates && importedData.fastingDates) {
+            setFastingDates(importedData.fastingDates);
+            importedCount++;
+            message += "- Fasting Dates: Imported\n";
+          } else if (dataManagementOptions.import.fastingDates && !importedData.fastingDates) {
+            skippedCount++;
+            message += "- Fasting Dates: Skipped (not found in file)\n";
+          }
+
+          if (dataManagementOptions.import.dailyCustomSchedules && importedData.dailyCustomSchedules) { // Import daily custom schedules
+            setDailyCustomSchedules(importedData.dailyCustomSchedules);
+            importedCount++;
+            message += "- Daily Custom Schedules: Imported\n";
+          } else if (dataManagementOptions.import.dailyCustomSchedules && !importedData.dailyCustomSchedules) {
+            skippedCount++;
+            message += "- Daily Custom Schedules: Skipped (not found in file)\n";
+          }
+
+
           if (importedCount === 0 && skippedCount === 0) {
               message = "No data categories were selected for import or found in the file.";
           } else if (importedCount > 0) {
@@ -1275,6 +1487,223 @@ function App() {
   };
 
 
+  // NEW: Planner Timeline Drag Logic
+  const handleMouseDown = useCallback((e, activityId, type = 'move', isDaily = false) => {
+    e.preventDefault();
+    const activityElement = e.currentTarget;
+    const rect = activityElement.getBoundingClientRect();
+    const plannerRect = plannerTimelineRef.current.getBoundingClientRect();
+
+    const currentScheduleSource = isDaily
+      ? dailyCustomSchedules[formatDateToYYYYMMDD(selectedPlannerDate)]
+      : plannerSchedule[activePlannerDayType];
+
+    if (!currentScheduleSource) return; // Should not happen
+
+    if (type === 'move') {
+      setDraggingActivity({
+        id: activityId,
+        startY: e.clientY,
+        initialTop: rect.top - plannerRect.top, // Position relative to planner container
+        initialStart: currentScheduleSource.find(act => act.id === activityId).plannedStart,
+        initialEnd: currentScheduleSource.find(act => act.id === activityId).plannedEnd,
+        isDaily: isDaily,
+      });
+    } else { // 'top' or 'bottom' resize
+      setResizingActivity({
+        id: activityId,
+        startY: e.clientY,
+        initialHeight: rect.height,
+        initialTop: rect.top - plannerRect.top,
+        type: type, // 'top' or 'bottom'
+        initialStart: currentScheduleSource.find(act => act.id === activityId).plannedStart,
+        initialEnd: currentScheduleSource.find(act => act.id === activityId).plannedEnd,
+        isDaily: isDaily,
+      });
+    }
+  }, [plannerSchedule, activePlannerDayType, dailyCustomSchedules, selectedPlannerDate]);
+
+  const handleMouseMove = useCallback((e) => {
+    if (draggingActivity) {
+      const plannerRect = plannerTimelineRef.current.getBoundingClientRect();
+      const deltaY = e.clientY - draggingActivity.startY;
+
+      const totalPlannerMinutes = 24 * 60; // 1440 minutes
+      const pixelsPerMinute = plannerTimelineRef.current.clientHeight / totalPlannerMinutes;
+
+      const minutesDelta = Math.round(deltaY / pixelsPerMinute);
+
+      const initialStartMinutes = timeToMinutes(draggingActivity.initialStart);
+      const initialEndMinutes = timeToMinutes(draggingActivity.initialEnd);
+      const durationMinutes = (initialEndMinutes < initialStartMinutes ? initialEndMinutes + 1440 : initialEndMinutes) - initialStartMinutes;
+
+      let newStartMinutes = initialStartMinutes + minutesDelta;
+      let newEndMinutes = newStartMinutes + durationMinutes;
+
+      // Basic clamping to keep within a 24-hour cycle (0 to 1440 minutes)
+      // This will allow wrapping around midnight if the duration spans it
+      if (newStartMinutes < 0) {
+          newStartMinutes += 1440;
+          newEndMinutes += 1440;
+      } else if (newStartMinutes >= 1440) {
+          newStartMinutes -= 1440;
+          newEndMinutes -= 1440;
+      }
+
+      if (draggingActivity.isDaily) {
+        const dateKey = formatDateToYYYYMMDD(selectedPlannerDate);
+        setDailyCustomSchedules(prev => {
+          const updatedSchedule = { ...prev };
+          updatedSchedule[dateKey] = updatedSchedule[dateKey].map(activity => {
+            if (activity.id === draggingActivity.id) {
+              return {
+                ...activity,
+                plannedStart: minutesToTime(newStartMinutes),
+                plannedEnd: minutesToTime(newEndMinutes),
+              };
+            }
+            return activity;
+          });
+          return updatedSchedule;
+        });
+      } else {
+        setPlannerSchedule(prevSchedule => {
+          const updatedSchedule = { ...prevSchedule };
+          updatedSchedule[activePlannerDayType] = updatedSchedule[activePlannerDayType].map(activity => {
+            if (activity.id === draggingActivity.id) {
+              return {
+                ...activity,
+                plannedStart: minutesToTime(newStartMinutes),
+                plannedEnd: minutesToTime(newEndMinutes),
+              };
+            }
+            return activity;
+          });
+          return updatedSchedule;
+        });
+      }
+    } else if (resizingActivity) {
+      const plannerRect = plannerTimelineRef.current.getBoundingClientRect();
+      const deltaY = e.clientY - resizingActivity.startY;
+
+      const totalPlannerMinutes = 24 * 60; // 1440 minutes
+      const pixelsPerMinute = plannerTimelineRef.current.clientHeight / totalPlannerMinutes;
+      const minutesDelta = Math.round(deltaY / pixelsPerMinute);
+
+      if (resizingActivity.isDaily) {
+        const dateKey = formatDateToYYYYMMDD(selectedPlannerDate);
+        setDailyCustomSchedules(prev => {
+          const updatedSchedule = { ...prev };
+          updatedSchedule[dateKey] = updatedSchedule[dateKey].map(activity => {
+            if (activity.id === resizingActivity.id) {
+              let newStartMinutes = timeToMinutes(resizingActivity.initialStart);
+              let newEndMinutes = timeToMinutes(resizingActivity.initialEnd);
+              if (newEndMinutes < newStartMinutes) newEndMinutes += 1440; // Handle midnight wrap
+
+              if (resizingActivity.type === 'bottom') {
+                newEndMinutes = (timeToMinutes(resizingActivity.initialEnd) + minutesDelta);
+                if (newEndMinutes < newStartMinutes) newEndMinutes += 1440; // Maintain wrap if it was there
+                if (newEndMinutes < newStartMinutes + 1) newEndMinutes = newStartMinutes + 1; // Minimum 1 minute duration
+              } else if (resizingActivity.type === 'top') {
+                newStartMinutes = (timeToMinutes(resizingActivity.initialStart) + minutesDelta);
+                if (newStartMinutes > newEndMinutes - 1) newStartMinutes = newEndMinutes - 1; // Minimum 1 minute duration
+              }
+
+              return {
+                ...activity,
+                plannedStart: minutesToTime(newStartMinutes),
+                plannedEnd: minutesToTime(newEndMinutes),
+              };
+            }
+            return activity;
+          });
+          return updatedSchedule;
+        });
+      } else {
+        setPlannerSchedule(prevSchedule => {
+          const updatedSchedule = { ...prevSchedule };
+          updatedSchedule[activePlannerDayType] = updatedSchedule[activePlannerDayType].map(activity => {
+            if (activity.id === resizingActivity.id) {
+              let newStartMinutes = timeToMinutes(resizingActivity.initialStart);
+              let newEndMinutes = timeToMinutes(resizingActivity.initialEnd);
+              if (newEndMinutes < newStartMinutes) newEndMinutes += 1440; // Handle midnight wrap
+
+              if (resizingActivity.type === 'bottom') {
+                newEndMinutes = (timeToMinutes(resizingActivity.initialEnd) + minutesDelta);
+                if (newEndMinutes < newStartMinutes) newEndMinutes += 1440; // Maintain wrap if it was there
+                if (newEndMinutes < newStartMinutes + 1) newEndMinutes = newStartMinutes + 1; // Minimum 1 minute duration
+              } else if (resizingActivity.type === 'top') {
+                newStartMinutes = (timeToMinutes(resizingActivity.initialStart) + minutesDelta);
+                if (newStartMinutes > newEndMinutes - 1) newStartMinutes = newEndMinutes - 1; // Minimum 1 minute duration
+              }
+
+              return {
+                ...activity,
+                plannedStart: minutesToTime(newStartMinutes),
+                plannedEnd: minutesToTime(newEndMinutes),
+              };
+            }
+            return activity;
+          });
+          return updatedSchedule;
+        });
+      }
+    }
+  }, [draggingActivity, resizingActivity, plannerSchedule, activePlannerDayType, dailyCustomSchedules, selectedPlannerDate]);
+
+  const handleMouseUp = useCallback(() => {
+    setDraggingActivity(null);
+    setResizingActivity(null);
+  }, []);
+
+  // Attach/detach mousemove and mouseup listeners globally
+  useEffect(() => {
+    if (draggingActivity || resizingActivity) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    } else {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [draggingActivity, resizingActivity, handleMouseMove, handleMouseUp]);
+
+
+  // Helper to calculate position and height for timeline blocks
+  const calculateBlockStyles = useCallback((activity) => {
+    const startMinutes = timeToMinutes(activity.plannedStart);
+    let endMinutes = timeToMinutes(activity.plannedEnd);
+
+    // If end time is before start time, it means it spans midnight
+    if (endMinutes < startMinutes) {
+      endMinutes += 1440; // Add 24 hours in minutes
+    }
+
+    const durationMinutes = endMinutes - startMinutes;
+
+    // Assuming plannerTimelineRef has a height of 1440px for 24 hours (1px per minute)
+    const totalPlannerMinutes = 24 * 60; // 1440 minutes
+    const pixelsPerMinute = plannerTimelineRef.current ? plannerTimelineRef.current.clientHeight / totalPlannerMinutes : 1; // Default to 1 if ref not ready
+
+    const topPx = startMinutes * pixelsPerMinute;
+    const heightPx = durationMinutes * pixelsPerMinute;
+
+    return {
+      top: `${topPx}px`,
+      height: `${heightPx}px`,
+    };
+  }, []);
+
+  // Effect to update dailyScheduleState whenever currentDate, plannerSchedule, dailyCustomSchedules, or fastingDates change
+  useEffect(() => {
+    setDailyScheduleState(generateScheduleForDate(currentDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates));
+  }, [currentDate, plannerSchedule, dailyCustomSchedules, fastingDates]);
+
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 font-inter text-gray-800 flex flex-col items-center">
       <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
@@ -1282,6 +1711,7 @@ function App() {
         <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
           <h1 className="text-3xl font-bold text-indigo-700">My Daily Rhythm</h1>
           <div className="flex space-x-2">
+            {/* Reordered tabs to put Schedule first */}
             <button
               onClick={() => setActiveTab('schedule')}
               className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
@@ -1291,12 +1721,12 @@ function App() {
               <CalendarDays className="inline-block mr-2" size={18} /> Schedule
             </button>
             <button
-              onClick={() => setActiveTab('planner')}
+              onClick={() => setActiveTab('day-planner')}
               className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                activeTab === 'planner' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                activeTab === 'day-planner' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              <Plus className="inline-block mr-2" size={18} /> Planner
+              <Plus className="inline-block mr-2" size={18} /> Day Planner
             </button>
             <button
               onClick={() => setActiveTab('tasks')}
@@ -1347,128 +1777,217 @@ function App() {
               </button>
             </div>
 
-            {/* Pomodoro Timer */}
-            <div className={`rounded-lg p-4 mb-6 text-center shadow-inner flex-shrink-0 transition-colors duration-300
-              ${pomodoroTimer.mode === 'work' ? 'bg-green-100' :
-                pomodoroTimer.mode === 'short_break' ? 'bg-blue-100' :
-                pomodoroTimer.mode === 'long_break' ? 'bg-purple-100' : 'bg-indigo-50'
+            {/* Pomodoro Timer Dashboard */}
+            <div className={`rounded-lg p-6 mb-6 text-center shadow-lg flex-shrink-0 transition-colors duration-300
+              ${pomodoroTimer.mode === 'work' ? 'bg-green-100 border-2 border-green-300' :
+                pomodoroTimer.mode === 'short_break' ? 'bg-blue-100 border-2 border-blue-300' :
+                pomodoroTimer.mode === 'long_break' ? 'bg-purple-100 border-2 border-purple-300' : 'bg-indigo-50 border-2 border-indigo-200'
               }`}
             >
-              <h3 className="text-xl font-semibold text-indigo-700 mb-2">Pomodoro Timer</h3>
-              <div className="relative w-32 h-32 mx-auto mb-4">
-                <div className="absolute inset-0 flex items-center justify-center text-5xl font-bold">
+              <h3 className="text-2xl font-bold text-indigo-800 mb-4">Pomodoro Dashboard</h3>
+
+              {/* Main Timer Display */}
+              <div className="relative w-48 h-48 mx-auto mb-6 flex items-center justify-center rounded-full bg-white shadow-inner">
+                <div className="absolute inset-0 flex items-center justify-center text-6xl font-extrabold text-gray-900">
                   {formatTime(pomodoroTimer.timeLeft)}
                 </div>
-                {/* Simple linear progress bar for Pomodoro */}
-                <div className="absolute bottom-0 left-0 right-0 h-2 bg-gray-300 rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full transition-all duration-1000 ease-linear
-                    ${pomodoroTimer.mode === 'work' ? 'bg-green-500' :
-                      pomodoroTimer.mode === 'short_break' ? 'bg-blue-500' :
-                      pomodoroTimer.mode === 'long_break' ? 'bg-purple-500' : 'bg-indigo-500'
-                    }`}
-                    style={{ width: `${(pomodoroTimer.timeLeft / ((pomodoroTimer.mode === 'work' ? pomodoroSettings.work : (pomodoroTimer.mode === 'short_break' ? pomodoroSettings.shortBreak : pomodoroSettings.longBreak)) * 60)) * 100}%` }}
-                  ></div>
-                </div>
+                {/* Circular progress bar (simplified for Tailwind, could use SVG for more complex) */}
+                <div className="absolute inset-0 rounded-full border-8 border-gray-200"></div>
+                <div className={`absolute inset-0 rounded-full border-8
+                  ${pomodoroTimer.mode === 'work' ? 'border-green-500' :
+                    pomodoroTimer.mode === 'short_break' ? 'border-blue-500' :
+                    pomodoroTimer.mode === 'long_break' ? 'border-purple-500' : 'border-transparent'
+                  }`}
+                  style={{
+                    clipPath: `polygon(50% 0%, 50% 50%, ${50 + 50 * Math.sin(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / ((pomodoroTimer.mode === 'work' ? pomodoroSettings.work : (pomodoroTimer.mode === 'short_break' ? pomodoroSettings.shortBreak : pomodoroSettings.longBreak)) * 60))))}% ${50 - 50 * Math.cos(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / ((pomodoroTimer.mode === 'work' ? pomodoroSettings.work : (pomodoroTimer.mode === 'short_break' ? pomodoroSettings.shortBreak : pomodoroSettings.longBreak)) * 60))))}%)`
+                  }}
+                ></div>
               </div>
 
-              <p className={`text-lg mb-4 capitalize font-semibold flex items-center justify-center
+              {/* Pomodoro Status and Linked Activity */}
+              <p className={`text-xl mb-4 capitalize font-semibold flex items-center justify-center
                 ${pomodoroTimer.mode === 'work' ? 'text-green-700' :
                   pomodoroTimer.mode === 'short_break' ? 'text-blue-700' :
                   pomodoroTimer.mode === 'long_break' ? 'text-purple-700' : 'text-gray-600'
                 }`}>
-                {pomodoroTimer.mode === 'work' && <PlayCircle size={20} className="mr-2" />}
-                {pomodoroTimer.mode === 'short_break' && <FastForward size={20} className="mr-2" />}
-                {pomodoroTimer.mode === 'long_break' && <FastForward size={20} className="mr-2" />}
                 {pomodoroTimer.mode.replace('_', ' ')} Session
               </p>
-              {currentPomodoroBlockId && getAssignedTaskInfo(currentPomodoroBlockId) && (
+              {pomodoroTimer.linkedActivityId && (
                 <p className="text-sm text-gray-700 mb-2">
-                  Working on: <span className="font-bold">
-                    {getAssignedTaskInfo(currentPomodoroBlockId).taskName}
-                    {getAssignedTaskInfo(currentPomodoroBlockId).subtaskName && ` - ${getAssignedTaskInfo(currentPomodoroBlockId).subtaskName}`}
+                  Linked to: <span className="font-bold">
+                    {dailyScheduleState.find(a => a.id === pomodoroTimer.linkedActivityId)?.activity || 'N/A'}
                   </span>
                 </p>
               )}
-              <div className="flex justify-center space-x-4">
+              {getAssignedTaskInfo(pomodoroTimer.linkedActivityId || currentPomodoroBlockId) && (
+                <p className="text-sm text-gray-700 mb-2">
+                  Working on: <span className="font-bold">
+                    {getAssignedTaskInfo(pomodoroTimer.linkedActivityId || currentPomodoroBlockId).taskName}
+                    {getAssignedTaskInfo(pomodoroTimer.linkedActivityId || currentPomodoroBlockId).subtaskName && ` - ${getAssignedTaskInfo(pomodoroTimer.linkedActivityId || currentPomodoroBlockId).subtaskName}`}
+                  </span>
+                </p>
+              )}
+              <p className="text-sm text-gray-500 mt-2">Pomodoros Completed: {pomodoroTimer.pomodorosCompleted}</p>
+
+              {/* Main Controls */}
+              <div className="flex justify-center space-x-4 mt-6">
                 <button
-                  onClick={startPomodoro}
+                  onClick={() => startPomodoroSession('work', pomodoroSettings.work)}
                   disabled={pomodoroTimer.running}
-                  className="p-3 rounded-full bg-green-500 text-white shadow-md hover:bg-green-600 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  aria-label="Start Pomodoro"
+                  className="px-4 py-2 rounded-full bg-green-500 text-white shadow-md hover:bg-green-600 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                  aria-label="Start Pomodoro Work Session"
                 >
-                  <Play size={24} />
+                  <Play size={20} className="mr-2" /> Start Work
                 </button>
                 <button
                   onClick={pausePomodoro}
                   disabled={!pomodoroTimer.running}
-                  className="p-3 rounded-full bg-yellow-500 text-white shadow-md hover:bg-yellow-600 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 rounded-full bg-yellow-500 text-white shadow-md hover:bg-yellow-600 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                   aria-label="Pause Pomodoro"
                 >
-                  <Pause size={24} />
+                  <Pause size={20} className="mr-2" /> Pause
                 </button>
                 <button
                   onClick={resetPomodoro}
-                  className="p-3 rounded-full bg-red-500 text-white shadow-md hover:bg-red-600 transition-colors duration-200"
+                  className="px-4 py-2 rounded-full bg-red-500 text-white shadow-md hover:bg-red-600 transition-colors duration-200 flex items-center"
                   aria-label="Reset Pomodoro"
                 >
-                  <RotateCcw size={24} />
+                  <RotateCcw size={20} className="mr-2" /> Reset
                 </button>
               </div>
-              <p className="text-sm text-gray-500 mt-2">Pomodoros Completed: {pomodoroTimer.pomodorosCompleted}</p>
+
+              {/* Manual Break Controls */}
+              <div className="mt-4 flex justify-center space-x-2">
+                <button
+                  onClick={() => startPomodoroSession('short_break', pomodoroSettings.shortBreak)}
+                  className="px-3 py-1 bg-blue-500 text-white rounded-md text-sm shadow-md hover:bg-blue-600 transition-colors duration-200"
+                  aria-label="Start Short Break"
+                >
+                  <Square size={14} className="inline-block mr-1" /> Short Break ({pomodoroSettings.shortBreak}m)
+                </button>
+                <button
+                  onClick={() => startPomodoroSession('long_break', pomodoroSettings.longBreak)}
+                  className="px-3 py-1 bg-purple-500 text-white rounded-md text-sm shadow-md hover:bg-purple-600 transition-colors duration-200"
+                  aria-label="Start Long Break"
+                >
+                  <Square size={14} className="inline-block mr-1" /> Long Break ({pomodoroSettings.longBreak}m)
+                </button>
+              </div>
 
               {/* Audio Enable Button */}
               {!audioEnabled && (
                 <button
                   onClick={handleEnableAudio}
-                  className="mt-4 px-4 py-2 bg-purple-500 text-white rounded-md shadow-md hover:bg-purple-600 transition-colors duration-200 flex items-center justify-center mx-auto"
+                  className="mt-6 px-4 py-2 bg-purple-500 text-white rounded-md shadow-md hover:bg-purple-600 transition-colors duration-200 flex items-center justify-center mx-auto"
                 >
                   <BellRing size={20} className="mr-2" /> Enable Sounds
                 </button>
               )}
               {audioEnabled && (
-                <p className="mt-4 text-sm text-green-700 flex items-center justify-center">
+                <p className="mt-6 text-sm text-green-700 flex items-center justify-center">
                   <BellRing size={16} className="mr-1" /> Sounds Enabled
                 </p>
               )}
+            </div>
 
+            {/* Daily Insights and Prominent Activities */}
+            <div className="mb-6">
+                <h4 className="text-xl font-semibold text-indigo-700 mb-4">Daily Insights</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left mb-6">
+                  <div className="bg-white p-4 rounded-lg shadow-sm">
+                    <p className="text-sm text-gray-600">
+                      Focused Work: <span className="font-bold">{(reportData.totalFocused || 0).toFixed(2)} / {(reportData.totalPlannedFocusedTime || 0).toFixed(2)} hrs</span>
+                    </p>
+                    <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                        <div className="bg-blue-500 h-2 rounded-full" style={{width: `${((reportData.totalFocused || 0) / Math.max((reportData.totalPlannedFocusedTime || 0), 1)) * 100}%`}}></div>
+                    </div>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg shadow-sm">
+                    <p className="text-sm text-gray-600">
+                      Prayers Logged: <span className="font-bold">{(reportData.totalActualPrayerTime || 0).toFixed(0)} / {(reportData.totalPlannedPrayerTime || 0).toFixed(0)} (est)</span>
+                    </p>
+                     <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                        <div className="bg-green-500 h-2 rounded-full" style={{width: `${((reportData.totalActualPrayerTime || 0) / Math.max((reportData.totalPlannedPrayerTime || 0), 1)) * 100}%`}}></div>
+                    </div>
+                  </div>
+                </div>
 
-              {/* Daily Insights */}
-              <div className="mt-4 border-t pt-4 border-indigo-200">
-                <h4 className="text-lg font-semibold text-indigo-700 mb-2">Daily Insights</h4>
-                <p className="text-sm text-gray-600">
-                  Focused Work: <span className="font-bold">{(reportData.totalFocused || 0).toFixed(2)} / {(reportData.totalPlannedFocusedTime || 0).toFixed(2)} hrs</span>
-                </p>
-                <p className="text-sm text-gray-600">
-                  Prayers Logged: <span className="font-bold">{(reportData.totalActualPrayerTime || 0).toFixed(0)} / {(reportData.totalPlannedPrayerTime || 0).toFixed(0)} (est)</span>
-                </p>
-                {currentOngoingTask && (
-                  <p
-                    onClick={() => scrollToActivity(currentOngoingTask.id)}
-                    className="text-base text-indigo-700 font-semibold mb-2 flex items-center justify-center cursor-pointer hover:text-indigo-900 transition-colors"
-                    role="button" tabIndex="0" aria-label={`Scroll to current task: ${currentOngoingTask.activity}`}
-                  >
-                    <FastForward size={18} className="mr-2" /> Current Task: {currentOngoingTask.activity} ({currentOngoingTask.plannedStart} - {currentOngoingTask.plannedEnd})
-                  </p>
-                )}
-                {nextTask && (
-                  <p
-                    onClick={() => scrollToActivity(nextTask.id)}
-                    className="text-base text-indigo-700 font-semibold flex items-center justify-center cursor-pointer hover:text-indigo-900 transition-colors"
-                    role="button" tabIndex="0" aria-label={`Scroll to next scheduled task: ${nextTask.activity}`}
-                  >
-                    <FastForward size={18} className="mr-2" /> Next Scheduled Task: {nextTask.activity} ({nextTask.plannedStart} - {nextTask.plannedEnd})
-                  </p>
-                )}
-                {nextPrayer && (
-                  <p
-                    onClick={() => scrollToActivity(nextPrayer.id)}
-                    className="text-base text-indigo-700 font-semibold mt-2 flex items-center justify-center cursor-pointer hover:text-indigo-900 transition-colors"
-                    role="button" tabIndex="0" aria-label={`Scroll to next prayer: ${nextPrayer.activity}`}
-                  >
-                    <FastForward size={18} className="mr-2" /> Next Prayer: {nextPrayer.activity} ({nextPrayer.plannedStart} - {nextPrayer.plannedEnd})
-                  </p>
-                )}
-              </div>
+                {/* Prominent Current/Next Activities */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {currentOngoingTask ? (
+                        <div
+                            onClick={() => scrollToActivity(currentOngoingTask.id)}
+                            className="bg-white p-4 rounded-lg shadow-lg border-l-4 border-blue-500 cursor-pointer hover:bg-blue-50 transition-colors duration-200"
+                            role="button" tabIndex="0" aria-label={`Scroll to current activity: ${currentOngoingTask.activity}`}
+                        >
+                            <h5 className="text-md font-bold text-blue-700 flex items-center mb-1">
+                                <PlayCircle size={18} className="mr-2" /> Current Activity
+                            </h5>
+                            <p className="text-lg font-semibold text-gray-800">{currentOngoingTask.activity}</p>
+                            <p className="text-sm text-gray-600">{currentOngoingTask.plannedStart} - {currentOngoingTask.plannedEnd}</p>
+                            {getAssignedTaskInfo(currentOngoingTask.id) && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Working on: {getAssignedTaskInfo(currentOngoingTask.id).taskName}
+                                    {getAssignedTaskInfo(currentOngoingTask.id).subtaskName && ` - ${getAssignedTaskInfo(currentOngoingTask.id).subtaskName}`}
+                                </p>
+                            )}
+                            {getLogForActivity(currentOngoingTask.id)?.actualStart && !getLogForActivity(currentOngoingTask.id)?.actualEnd && (
+                                <div className="w-full bg-gray-200 rounded-full h-1 mt-2">
+                                    <div className="bg-blue-400 h-1 rounded-full" style={{ width: `${getProgressBarPercentage(currentOngoingTask.id)}%` }}></div>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-gray-300">
+                            <h5 className="text-md font-bold text-gray-600 flex items-center mb-1">
+                                <Clock size={18} className="mr-2" /> No Current Activity
+                            </h5>
+                            <p className="text-sm text-gray-500">Start an activity from the schedule below.</p>
+                        </div>
+                    )}
+
+                    {nextTask ? (
+                        <div
+                            onClick={() => scrollToActivity(nextTask.id)}
+                            className="bg-white p-4 rounded-lg shadow-lg border-l-4 border-indigo-500 cursor-pointer hover:bg-indigo-50 transition-colors duration-200"
+                            role="button" tabIndex="0" aria-label={`Scroll to next scheduled activity: ${nextTask.activity}`}
+                        >
+                            <h5 className="text-md font-bold text-indigo-700 flex items-center mb-1">
+                                <FastForward size={18} className="mr-2" /> Next Scheduled Activity
+                            </h5>
+                            <p className="text-lg font-semibold text-gray-800">{nextTask.activity}</p>
+                            <p className="text-sm text-gray-600">{nextTask.plannedStart} - {nextTask.plannedEnd}</p>
+                        </div>
+                    ) : (
+                        <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-gray-300">
+                            <h5 className="text-md font-bold text-gray-600 flex items-center mb-1">
+                                <FastForward size={18} className="mr-2" /> No Upcoming Activity
+                            </h5>
+                            <p className="text-sm text-gray-500">Your schedule is clear for now.</p>
+                        </div>
+                    )}
+
+                    {nextPrayer ? (
+                        <div
+                            onClick={() => scrollToActivity(nextPrayer.id)}
+                            className="bg-white p-4 rounded-lg shadow-lg border-l-4 border-green-500 cursor-pointer hover:bg-green-50 transition-colors duration-200"
+                            role="button" tabIndex="0" aria-label={`Scroll to next prayer: ${nextPrayer.activity}`}
+                        >
+                            <h5 className="text-md font-bold text-green-700 flex items-center mb-1">
+                                <BellRing size={18} className="mr-2" /> Next Prayer
+                            </h5>
+                            <p className="text-lg font-semibold text-gray-800">{nextPrayer.activity}</p>
+                            <p className="text-sm text-gray-600">{nextPrayer.plannedStart} - {nextPrayer.plannedEnd}</p>
+                        </div>
+                    ) : (
+                        <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-gray-300">
+                            <h5 className="text-md font-bold text-gray-600 flex items-center mb-1">
+                                <BellRing size={18} className="mr-2" /> No Upcoming Prayer
+                            </h5>
+                            <p className="text-sm text-gray-500">All prayers for today are complete or not yet scheduled.</p>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Scrollable Schedule Table */}
@@ -1504,7 +2023,7 @@ function App() {
                           const assignedTaskInfo = getAssignedTaskInfo(activity.id);
                           const actualDuration = getActualDuration(log);
                           const progressBarPercentage = getProgressBarPercentage(activity.id);
-                          const isSubdividedBlock = (activity.type === 'academic' || activity.originalActivityId === 'flexible-afternoon') && activity.id.includes('-part');
+                          const isSubdividedBlock = (activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && activity.id.includes('-part');
                           const currentAdHocSubTask = subTaskDetails[activity.id] || ''; // Ad-hoc subtask
                           const timeGroup = getTimeOfDayGroup(activity.plannedStart);
                           const activityNameLower = activity.activity.toLowerCase();
@@ -1612,9 +2131,7 @@ function App() {
                               <td className="py-3 px-4 text-sm text-gray-600">
                                 {formatDateTime(log?.actualEnd)}
                               </td>
-                              <td className="py-3 px-4 text-sm text-gray-600">
-                                {actualDuration > 0 ? `${actualDuration.toFixed(2)} hrs` : '-'}
-                              </td>
+                              <td className="py-3 px-4 text-sm text-gray-600">{actualDuration > 0 ? `${actualDuration.toFixed(2)} hrs` : '-'}</td>
                               <td className="py-3 px-4 text-sm">
                                 <div className="flex space-x-2">
                                   {!log?.actualStart && (
@@ -1644,7 +2161,7 @@ function App() {
                                       <RefreshCcw size={14} className="inline-block mr-1" /> Reset
                                     </button>
                                   )}
-                                  {(activity.type === 'academic' || activity.id === 'flexible-afternoon') && (
+                                  {(activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && (
                                     assignedTaskInfo ? (
                                       <button
                                         onClick={() => handleUnassignTask(activity.id)}
@@ -1677,83 +2194,419 @@ function App() {
           </div>
         )}
 
-        {/* Planner Tab */}
-        {activeTab === 'planner' && (
-          <div className="flex-grow overflow-y-auto">
-            <h2 className="text-2xl font-semibold text-indigo-800 mb-4">Customize Your Schedule</h2>
+        {/* Day Planner Tab */}
+        {activeTab === 'day-planner' && (
+          <div className="flex-grow flex flex-col">
+            <h2 className="text-2xl font-semibold text-indigo-800 mb-4">Customize Your Day Plans</h2>
             <p className="text-gray-600 mb-4">
-              Edit your default daily activities here. Changes will apply to future schedules.
-              Day-specific events (like soccer or Jumu'ah) will still override or integrate as usual.
+              Select a day type to view and edit its recurring activities, or customize a specific day.
             </p>
-            <button
-              onClick={handleAddActivity}
-              className="mb-4 px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center"
-              aria-label="Add New Activity"
-            >
-              <Plus size={20} className="mr-2" /> Add New Activity
-            </button>
 
-            <div className="overflow-x-auto">
-              <table className="min-w-full bg-white rounded-lg shadow-md">
-                <thead className="bg-indigo-100">
-                  <tr>
-                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tl-lg">Activity</th>
-                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Start</th>
-                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">End</th>
-                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Type</th>
-                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tr-lg">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {plannerSchedule.sort((a, b) => parseTime(a.plannedStart) - parseTime(b.plannedStart)).map((activity) => {
-                    const timeGroup = getTimeOfDayGroup(activity.plannedStart);
-                    const activityNameLower = activity.activity.toLowerCase();
-                    const isPrayerBlock = activityNameLower.includes('iqamah & prayer') || activityNameLower.includes('prayer');
-                    return (
-                      <tr key={activity.id} className={`border-b border-gray-200 hover:bg-gray-50
-                        ${isPrayerBlock
-                          ? 'bg-green-50'
-                          : (
-                            timeGroup === 'night' ? 'bg-gray-100' :
-                            timeGroup === 'early-morning' ? 'bg-sky-50' :
-                            timeGroup === 'midday' ? 'bg-amber-50' :
-                            timeGroup === 'afternoon' ? 'bg-teal-50' :
-                            timeGroup === 'evening' ? 'bg-purple-50' : ''
-                          )
-                        }
-                      `}>
-                        <td className="py-3 px-4 text-sm font-medium text-gray-700">
-                          <span className={`${isPrayerBlock ? 'font-bold' : ''}`}>
-                            {activity.activity}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-sm text-gray-600">{activity.plannedStart}</td>
-                        <td className="py-3 px-4 text-sm text-gray-600">{activity.plannedEnd}</td>
-                        <td className="py-3 px-4 text-sm text-gray-600 capitalize">{activity.type}</td>
-                        <td className="py-3 px-4 text-sm">
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => handleEditActivity(activity)}
-                              className="p-2 bg-blue-500 text-white rounded-md text-xs hover:bg-blue-600 transition-colors duration-200"
-                              aria-label={`Edit ${activity.activity}`}
-                            >
-                              <Edit size={16} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteActivity(activity.id)}
-                              className="p-2 bg-red-500 text-white rounded-md text-xs hover:bg-red-600 transition-colors duration-200"
-                              aria-label={`Delete ${activity.activity}`}
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            {/* Planner View Mode Selector */}
+            <div className="flex space-x-2 mb-4">
+                <button
+                    onClick={() => setPlannerViewMode('daily')}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                        plannerViewMode === 'daily' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                >
+                    Daily Plan Editor
+                </button>
+                <button
+                    onClick={() => setPlannerViewMode('templates')}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                        plannerViewMode === 'templates' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                >
+                    Template Editor
+                </button>
             </div>
+
+            {plannerViewMode === 'templates' ? (
+                <>
+                    {/* Day Type Selector Buttons for Templates */}
+                    <div className="flex flex-wrap gap-2 mb-4">
+                    {['weekday', 'weekend', 'jumuah', 'fasting'].map(type => (
+                        <button
+                        key={type}
+                        onClick={() => setActivePlannerDayType(type)}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 capitalize ${
+                            activePlannerDayType === type ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                        >
+                        {type.replace('-', ' ')}
+                        </button>
+                    ))}
+                    </div>
+
+                    <button
+                    onClick={handleAddTemplateActivity}
+                    className="mb-4 px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center self-start"
+                    aria-label="Add New Activity"
+                    >
+                    <Plus size={20} className="mr-2" /> Add New Activity to {activePlannerDayType.replace('-', ' ')} Template
+                    </button>
+
+                    {/* Quick Reference Activity List for Current Day Type */}
+                    <div className="bg-indigo-50 rounded-lg p-4 mb-6 shadow-inner">
+                    <h3 className="text-lg font-semibold text-indigo-700 mb-2 capitalize">
+                        {activePlannerDayType.replace('-', ' ')} Activities Overview
+                    </h3>
+                    {plannerSchedule[activePlannerDayType] && plannerSchedule[activePlannerDayType].length > 0 ? (
+                        <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {plannerSchedule[activePlannerDayType]
+                            .sort((a, b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart))
+                            .map(activity => (
+                            <li key={activity.id} className="bg-white p-3 rounded-md shadow-sm flex items-center justify-between">
+                                <div>
+                                <p className="font-medium text-gray-800">{activity.activity}</p>
+                                <p className="text-xs text-gray-600">
+                                    {activity.plannedStart} - {activity.plannedEnd} | Type: {activity.type} | Recurrence: {activity.recurrenceType}
+                                    {activity.recurrenceType === 'weekly' && ` (${activity.recurrenceDays.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')})`}
+                                    | Constraint: {activity.constraintType}
+                                </p>
+                                </div>
+                                <div className="flex space-x-1">
+                                <button
+                                    onClick={() => handleEditTemplateActivity(activity)}
+                                    className="p-1 text-blue-500 hover:text-blue-700 transition-colors"
+                                    aria-label={`Edit ${activity.activity}`}
+                                >
+                                    <Edit size={16} />
+                                </button>
+                                <button
+                                    onClick={() => handleDeleteTemplateActivity(activity.id)}
+                                    className="p-1 text-red-500 hover:text-red-700 transition-colors"
+                                    aria-label={`Delete ${activity.activity}`}
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                                </div>
+                            </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="text-sm text-gray-500">No activities defined for this day type yet. Click "Add New Activity" to start!</p>
+                    )}
+                    </div>
+
+
+                    {/* Visual Planner Timeline for Templates */}
+                    <div ref={plannerTimelineRef} className="relative w-full h-[1440px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200">
+                    {/* Time Grid Lines and Labels */}
+                    {[...Array(25)].map((_, hour) => (
+                        <React.Fragment key={hour}>
+                        <div
+                            className="absolute left-0 w-full border-t border-gray-200 text-xs text-gray-500 pl-2"
+                            style={{ top: `${(hour / 24) * 100}%`, height: '1px' }}
+                        >
+                            <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:00</span>
+                        </div>
+                        {/* Add 15, 30, 45 minute markers for finer resolution */}
+                        {hour < 24 && ( // Don't add markers after 24:00
+                            <>
+                            <div
+                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                style={{ top: `${(hour / 24) * 100 + (15 / 1440) * 100}%`, height: '1px' }}
+                            >
+                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:15</span>
+                            </div>
+                            <div
+                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                style={{ top: `${(hour / 24) * 100 + (30 / 1440) * 100}%`, height: '1px' }}
+                            >
+                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:30</span>
+                            </div>
+                            <div
+                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                style={{ top: `${(hour / 24) * 100 + (45 / 1440) * 100}%`, height: '1px' }}
+                            >
+                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:45</span>
+                            </div>
+                            </>
+                        )}
+                        </React.Fragment>
+                    ))}
+
+                    {/* Activity Blocks */}
+                    {plannerSchedule[activePlannerDayType] && plannerSchedule[activePlannerDayType].sort((a,b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)).map(activity => {
+                        const { top, height } = calculateBlockStyles(activity);
+                        const activityNameLower = activity.activity.toLowerCase();
+
+                        let bgColor = 'bg-indigo-200'; // Default
+                        if (activity.type === 'academic') bgColor = 'bg-blue-200';
+                        if (activity.type === 'spiritual') bgColor = 'bg-green-200';
+                        if (activity.type === 'physical') bgColor = 'bg-red-200';
+                        if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
+
+
+                        return (
+                        <div
+                            key={activity.id}
+                            className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
+                            ${bgColor}
+                            ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
+                            `}
+                            style={{ top, height }}
+                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'move', false)}
+                            onDoubleClick={() => handleEditTemplateActivity(activity)}
+                            title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
+                        >
+                            {/* Top Resize Handle */}
+                            <div
+                            className="absolute top-0 left-0 right-0 h-2 -mt-1 cursor-ns-resize z-30"
+                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'top', false)}
+                            ></div>
+                            <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
+                            <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
+                            {/* Bottom Resize Handle */}
+                            <div
+                            className="absolute bottom-0 left-0 right-0 h-2 -mb-1 cursor-ns-resize z-30"
+                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'bottom', false)}
+                            ></div>
+                        </div>
+                        );
+                    })}
+                    </div>
+
+                    <p className="text-sm text-gray-500 mt-4">Double-click an activity to edit details. Drag activities to adjust their times. Drag top/bottom edges to resize.</p>
+                </>
+            ) : (
+                <>
+                    {/* Date Navigation for Daily Planner Editor */}
+                    <div className="flex justify-between items-center mb-4">
+                        <button
+                            onClick={() => setSelectedPlannerDate(prev => { const newDate = new Date(prev); newDate.setDate(newDate.getDate() - 1); return newDate; })}
+                            className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
+                            aria-label="Previous day"
+                        >
+                            <ChevronLeft size={20} />
+                        </button>
+                        <h3 className="text-2xl font-semibold text-indigo-800">
+                            Daily Plan for {selectedPlannerDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                        </h3>
+                        <button
+                            onClick={() => setSelectedPlannerDate(prev => { const newDate = new Date(prev); newDate.setDate(newDate.getDate() + 1); return newDate; })}
+                            className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
+                            aria-label="Next day"
+                        >
+                            <ChevronRight size={20} />
+                        </button>
+                    </div>
+
+                    {/* Fasting Day Checkbox - MOVED here */}
+                    <div className="flex items-center justify-center mb-4">
+                        <input
+                            type="checkbox"
+                            id="isFastingDayPlanner"
+                            checked={!!fastingDates[formatDateToYYYYMMDD(selectedPlannerDate)]}
+                            onChange={() => handleToggleFastingDay(selectedPlannerDate)}
+                            className="form-checkbox h-5 w-5 text-indigo-600 rounded"
+                        />
+                        <label htmlFor="isFastingDayPlanner" className="ml-2 text-lg font-medium text-gray-700">
+                            Mark as Fasting Day
+                        </label>
+                    </div>
+
+                    {/* Base Template Selection */}
+                    <div className="flex items-center space-x-2 mb-4">
+                        <label htmlFor="baseTemplateSelect" className="block text-sm font-medium text-gray-700">Apply Base Template:</label>
+                        <select
+                            id="baseTemplateSelect"
+                            value={selectedBaseTemplate}
+                            onChange={(e) => setSelectedBaseTemplate(e.target.value)}
+                            className="p-2 border border-gray-300 rounded-md"
+                        >
+                            <option value="weekday">Weekday</option>
+                            <option value="weekend">Weekend</option>
+                            <option value="jumuah">Jumu'ah</option>
+                            <option value="fasting">Fasting Day</option>
+                        </select>
+                        <button
+                            onClick={handleApplyTemplateToDailyPlan}
+                            className="px-4 py-2 bg-blue-500 text-white rounded-md shadow-md hover:bg-blue-600 transition-colors duration-200 flex items-center"
+                            aria-label="Apply selected template"
+                        >
+                            Apply Template
+                        </button>
+                    </div>
+
+                    <button
+                        onClick={handleAddDailyActivity}
+                        className="mb-4 px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center self-start"
+                        aria-label="Add New Activity to Daily Plan"
+                    >
+                        <Plus size={20} className="mr-2" /> Add New Activity to Daily Plan
+                    </button>
+
+                    {/* Daily Plan Editor (based on dailyCustomSchedules or derived) */}
+                    <div className="overflow-y-auto flex-grow">
+                        <table className="min-w-full bg-white rounded-lg shadow-md">
+                            <thead className="bg-indigo-100 sticky top-0 z-10">
+                                <tr>
+                                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tl-lg">Activity</th>
+                                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Planned</th>
+                                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Type</th>
+                                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tr-lg">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {(() => {
+                                    const dateKey = formatDateToYYYYMMDD(selectedPlannerDate);
+                                    let currentDayActivities = dailyCustomSchedules[dateKey];
+
+                                    // If no custom schedule exists for this day, initialize it from the derived dailyScheduleState
+                                    if (!currentDayActivities) {
+                                        // Generate schedule using the default template and considering fasting status
+                                        currentDayActivities = generateScheduleForDate(selectedPlannerDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates); // Null for templateType means auto-detect
+                                        // Store this generated schedule as the custom schedule for the day
+                                        // This will be handled by the useEffect that updates dailyCustomSchedules,
+                                        // but for immediate rendering, we use this local variable.
+                                        // The useEffect will ensure persistence.
+                                    }
+
+                                    // Group and render the currentDayActivities
+                                    const groupedDailyActivities = currentDayActivities.reduce((acc, activity) => {
+                                        const group = getTimeOfDayGroup(activity.plannedStart);
+                                        if (!acc[group]) {
+                                            acc[group] = [];
+                                        }
+                                        acc[group].push(activity);
+                                        return acc;
+                                    }, {});
+
+                                    return timeOfDayOrder.map(groupName => {
+                                        const activitiesInGroup = groupedDailyActivities[groupName];
+                                        if (!activitiesInGroup || activitiesInGroup.length === 0) return null;
+
+                                        const isCollapsed = collapsedSections[`daily-editor-${groupName}`];
+
+                                        return (
+                                            <React.Fragment key={`daily-editor-${groupName}`}>
+                                                <tr className="bg-indigo-200 sticky top-12 z-10">
+                                                    <td colSpan="4" className="py-2 px-4 text-left text-md font-bold text-indigo-800 cursor-pointer" onClick={() => toggleSection(`daily-editor-${groupName}`)}>
+                                                        {groupName.replace('-', ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                                                        <span className="ml-2">{isCollapsed ? '▼' : '▲'}</span>
+                                                    </td>
+                                                </tr>
+                                                {!isCollapsed && activitiesInGroup.map((activity) => (
+                                                    <tr key={activity.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                                        <td className="py-3 px-4 text-sm font-medium text-gray-700">
+                                                            {activity.activity}
+                                                            <span className="block text-xs text-gray-500">
+                                                                {activity.plannedStart} - {activity.plannedEnd}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-3 px-4 text-sm text-gray-600">
+                                                            {getPlannedDuration(activity.plannedStart, activity.plannedEnd, selectedPlannerDate).toFixed(2)} hrs
+                                                        </td>
+                                                        <td className="py-3 px-4 text-sm text-gray-600 capitalize">{activity.type}</td>
+                                                        <td className="py-3 px-4 text-sm">
+                                                            <div className="flex space-x-2">
+                                                                <button
+                                                                    onClick={() => handleEditDailyActivity(activity)}
+                                                                    className="p-2 bg-blue-500 text-white rounded-md text-xs hover:bg-blue-600 transition-colors duration-200"
+                                                                    aria-label={`Edit ${activity.activity}`}
+                                                                >
+                                                                    <Edit size={16} />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeleteDailyActivity(activity.id)}
+                                                                    className="p-2 bg-red-500 text-white rounded-md text-xs hover:bg-red-600 transition-colors duration-200"
+                                                                    aria-label={`Delete ${activity.activity}`}
+                                                                >
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </React.Fragment>
+                                        );
+                                    });
+                                })()}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Visual Planner Timeline for Daily Editor */}
+                    <div ref={plannerTimelineRef} className="relative w-full h-[1440px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200 mt-6">
+                    {/* Time Grid Lines and Labels */}
+                    {[...Array(25)].map((_, hour) => (
+                        <React.Fragment key={hour}>
+                        <div
+                            className="absolute left-0 w-full border-t border-gray-200 text-xs text-gray-500 pl-2"
+                            style={{ top: `${(hour / 24) * 100}%`, height: '1px' }}
+                        >
+                            <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:00</span>
+                        </div>
+                        {hour < 24 && (
+                            <>
+                            <div
+                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                style={{ top: `${(hour / 24) * 100 + (15 / 1440) * 100}%`, height: '1px' }}
+                            >
+                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:15</span>
+                            </div>
+                            <div
+                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                style={{ top: `${(hour / 24) * 100 + (30 / 1440) * 100}%`, height: '1px' }}
+                            >
+                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:30</span>
+                            </div>
+                            <div
+                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                style={{ top: `${(hour / 24) * 100 + (45 / 1440) * 100}%`, height: '1px' }}
+                            >
+                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:45</span>
+                            </div>
+                            </>
+                        )}
+                        </React.Fragment>
+                    ))}
+
+                    {/* Activity Blocks for Daily Editor */}
+                    {dailyCustomSchedules[formatDateToYYYYMMDD(selectedPlannerDate)] && dailyCustomSchedules[formatDateToYYYYMMDD(selectedPlannerDate)].sort((a,b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)).map(activity => {
+                        const { top, height } = calculateBlockStyles(activity);
+                        const activityNameLower = activity.activity.toLowerCase();
+
+                        let bgColor = 'bg-indigo-200';
+                        if (activity.type === 'academic') bgColor = 'bg-blue-200';
+                        if (activity.type === 'spiritual') bgColor = 'bg-green-200';
+                        if (activity.type === 'physical') bgColor = 'bg-red-200';
+                        if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
+
+                        return (
+                        <div
+                            key={activity.id}
+                            className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
+                            ${bgColor}
+                            ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
+                            `}
+                            style={{ top, height }}
+                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'move', true)}
+                            onDoubleClick={() => handleEditDailyActivity(activity)}
+                            title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
+                        >
+                            {/* Top Resize Handle */}
+                            <div
+                            className="absolute top-0 left-0 right-0 h-2 -mt-1 cursor-ns-resize z-30"
+                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'top', true)}
+                            ></div>
+                            <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
+                            <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
+                            {/* Bottom Resize Handle */}
+                            <div
+                            className="absolute bottom-0 left-0 right-0 h-2 -mb-1 cursor-ns-resize z-30"
+                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'bottom', true)}
+                            ></div>
+                        </div>
+                        );
+                    })}
+                    </div>
+                    <p className="text-sm text-gray-500 mt-4">Double-click an activity to edit details. Drag activities to adjust their times. Drag top/bottom edges to resize. Changes here only affect this specific day.</p>
+                </>
+            )}
           </div>
         )}
 
@@ -2041,179 +2894,6 @@ function App() {
             )}
           </div>
         )}
-
-        {/* Settings Tab */}
-        {activeTab === 'settings' && (
-          <div className="flex-grow overflow-y-auto">
-            <div className="bg-indigo-50 rounded-lg p-6 shadow-inner">
-              <h2 className="text-2xl font-semibold text-indigo-800 mb-4">Pomodoro Settings</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="work" className="block text-sm font-medium text-gray-700 mb-1">Work Duration (minutes)</label>
-                  <input
-                    type="number"
-                    id="work"
-                    name="work"
-                    value={pomodoroSettings.work}
-                    onChange={handlePomodoroSettingChange}
-                    className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="shortBreak" className="block text-sm font-medium text-gray-700 mb-1">Short Break (minutes)</label>
-                  <input
-                    type="number"
-                    id="shortBreak"
-                    name="shortBreak"
-                    value={pomodoroSettings.shortBreak}
-                    onChange={handlePomodoroSettingChange}
-                    className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="longBreak" className="block text-sm font-medium text-gray-700 mb-1">Long Break (minutes)</label>
-                  <input
-                    type="number"
-                    id="longBreak"
-                    name="longBreak"
-                    value={pomodoroSettings.longBreak}
-                    onChange={handlePomodoroSettingChange}
-                    className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="longBreakInterval" className="block text-sm font-medium text-gray-700 mb-1">Long Break Interval (Pomodoros)</label>
-                  <input
-                    type="number"
-                    id="longBreakInterval"
-                    name="longBreakInterval"
-                    value={pomodoroSettings.longBreakInterval}
-                    onChange={handlePomodoroSettingChange}
-                    className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-              <p className="text-sm text-gray-500 mt-4">Changes are saved automatically.</p>
-
-              <h2 className="text-2xl font-semibold text-indigo-800 mt-8 mb-4">Data Management</h2>
-              <div className="flex flex-col space-y-3">
-                <h3 className="text-lg font-semibold text-indigo-700 mt-4 mb-2">Export Options</h3>
-                <div className="grid grid-cols-2 gap-2 text-sm text-gray-700">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
-                      checked={dataManagementOptions.export.tasks}
-                      onChange={(e) => handleDataOptionChange('export', 'tasks', e.target.checked)}
-                    />
-                    <span className="ml-2">Task List</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
-                      checked={dataManagementOptions.export.dailySchedule}
-                      onChange={(e) => handleDataOptionChange('export', 'dailySchedule', e.target.checked)}
-                    />
-                    <span className="ml-2">Daily Schedule</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
-                      checked={dataManagementOptions.export.activityLogs}
-                      onChange={(e) => handleDataOptionChange('export', 'activityLogs', e.target.checked)}
-                    />
-                    <span className="ml-2">Activity Logs</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
-                      checked={dataManagementOptions.export.pomodoroSettings}
-                      onChange={(e) => handleDataOptionChange('export', 'pomodoroSettings', e.target.checked)}
-                    />
-                    <span className="ml-2">Pomodoro Settings</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
-                      checked={dataManagementOptions.export.subTaskDetails}
-                      onChange={(e) => handleDataOptionChange('export', 'subTaskDetails', e.target.checked)}
-                    />
-                    <span className="ml-2">Sub-Task Details (Ad-hoc)</span>
-                  </label>
-                </div>
-                <button
-                  onClick={handleExportData}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-md shadow-md hover:bg-blue-600 transition-colors duration-200 flex items-center justify-center mt-4"
-                >
-                  <Download size={20} className="mr-2" /> Export Selected Data
-                </button>
-
-                <h3 className="text-lg font-semibold text-indigo-700 mt-6 mb-2">Import Options</h3>
-                <div className="grid grid-cols-2 gap-2 text-sm text-gray-700">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
-                      checked={dataManagementOptions.import.tasks}
-                      onChange={(e) => handleDataOptionChange('import', 'tasks', e.target.checked)}
-                    />
-                    <span className="ml-2">Task List</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
-                      checked={dataManagementOptions.import.dailySchedule}
-                      onChange={(e) => handleDataOptionChange('import', 'dailySchedule', e.target.checked)}
-                    />
-                    <span className="ml-2">Daily Schedule</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
-                      checked={dataManagementOptions.import.activityLogs}
-                      onChange={(e) => handleDataOptionChange('import', 'activityLogs', e.target.checked)}
-                    />
-                    <span className="ml-2">Activity Logs</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
-                      checked={dataManagementOptions.import.pomodoroSettings}
-                      onChange={(e) => handleDataOptionChange('import', 'pomodoroSettings', e.target.checked)}
-                    />
-                    <span className="ml-2">Pomodoro Settings</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
-                      checked={dataManagementOptions.import.subTaskDetails}
-                      onChange={(e) => handleDataOptionChange('import', 'subTaskDetails', e.target.checked)}
-                    />
-                    <span className="ml-2">Sub-Task Details (Ad-hoc)</span>
-                  </label>
-                </div>
-                <label htmlFor="importFile" className="px-4 py-2 bg-purple-500 text-white rounded-md shadow-md hover:bg-purple-600 transition-colors duration-200 flex items-center justify-center cursor-pointer mt-4">
-                  <Upload size={20} className="mr-2" /> Import Data
-                  <input
-                    type="file"
-                    id="importFile"
-                    accept=".json"
-                    onChange={handleImportData}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
       <footer className="text-gray-600 text-sm mt-8 flex-shrink-0">
         Built with React and Tailwind CSS. Data saved in browser's local storage.
@@ -2278,6 +2958,60 @@ function App() {
                   <option value="physical">Physical</option>
                 </select>
               </div>
+              {/* Recurrence Type (hidden if editing daily schedule) */}
+              {!isEditingDailySchedule && (
+                <div>
+                  <label htmlFor="recurrenceType" className="block text-sm font-medium text-gray-700">Recurrence</label>
+                  <select
+                    id="recurrenceType"
+                    value={editingActivity?.recurrenceType || 'none'}
+                    onChange={(e) => setEditingActivity(prev => ({ ...prev, recurrenceType: e.target.value, recurrenceDays: e.target.value === 'daily' ? [] : prev.recurrenceDays }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                  >
+                    <option value="none">Does not repeat</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </div>
+              )}
+              {/* Recurrence Days (if weekly and not editing daily schedule) */}
+              {!isEditingDailySchedule && editingActivity?.recurrenceType === 'weekly' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Repeat on</label>
+                  <div className="mt-1 grid grid-cols-3 gap-2">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+                      <label key={day} className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={editingActivity.recurrenceDays.includes(index)}
+                          onChange={(e) => {
+                            const newRecurrenceDays = e.target.checked
+                              ? [...editingActivity.recurrenceDays, index]
+                              : editingActivity.recurrenceDays.filter(d => d !== index);
+                            setEditingActivity(prev => ({ ...prev, recurrenceDays: newRecurrenceDays.sort((a,b) => a-b) }));
+                          }}
+                          className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                        />
+                        <span className="ml-2 text-sm text-gray-700">{day}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Constraint Type */}
+              <div>
+                <label htmlFor="constraintType" className="block text-sm font-medium text-gray-700">Constraint Type</label>
+                <select
+                  id="constraintType"
+                  value={editingActivity?.constraintType || 'adjustable'}
+                  onChange={(e) => setEditingActivity(prev => ({ ...prev, constraintType: e.target.value }))}
+                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                >
+                  <option value="hard">Hard (Non-negotiable)</option>
+                  <option value="adjustable">Adjustable (Can be shifted/shrunk)</option>
+                  <option value="removable">Removable (Can be deleted in conflict)</option>
+                </select>
+              </div>
             </div>
             <div className="mt-6 flex justify-end space-x-3">
               <button
@@ -2287,7 +3021,13 @@ function App() {
                 <X size={18} className="inline-block mr-1" /> Cancel
               </button>
               <button
-                onClick={() => handleSaveActivity(editingActivity)}
+                onClick={() => {
+                  if (isEditingDailySchedule) {
+                    handleSaveDailyActivity(editingActivity);
+                  } else {
+                    handleSaveTemplateActivity(editingActivity);
+                  }
+                }}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
               >
                 <Save size={18} className="inline-block mr-1" /> Save Activity
@@ -2538,7 +3278,7 @@ function App() {
       {isAssignTaskModalOpen && (
         <AssignTaskModal
           onClose={() => {
-            setIsAssignTaskModalOpen(false);
+            setIsAssignTaskModal(false);
             setAssigningToActivity(null);
             setAssigningFromTask(null);
           }}
@@ -2580,6 +3320,43 @@ function App() {
         </div>
       )}
 
+      {/* NEW: Pomodoro Alert Modal */}
+      {pomodoroTimer.showAlert && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm text-center relative">
+            <BellRing size={48} className="mx-auto text-yellow-500 mb-4 animate-bounce" />
+            <h3 className="text-2xl font-bold text-indigo-700 mb-2">Pomodoro Alert!</h3>
+            <p className="text-lg text-gray-800 mb-4">
+              {pomodoroTimer.alertMessage}
+            </p>
+            <div className="flex justify-center space-x-4 mt-6">
+              {pomodoroTimer.nextMode && pomodoroTimer.nextTimeLeft > 0 && (
+                <button
+                  onClick={continuePomodoro}
+                  className="px-6 py-2 bg-green-600 text-white rounded-md shadow-md hover:bg-green-700 transition-colors"
+                >
+                  Continue to {pomodoroTimer.nextMode.replace('_', ' ')}
+                </button>
+              )}
+              {pomodoroTimer.mode !== 'work' && ( // Allow skipping break if currently on a break
+                <button
+                  onClick={skipBreak}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-md shadow-md hover:bg-blue-700 transition-colors"
+                >
+                  Skip Break
+                </button>
+              )}
+              <button
+                onClick={endPomodoroSession}
+                className="px-6 py-2 bg-red-600 text-white rounded-md shadow-md hover:bg-red-700 transition-colors"
+              >
+                End Session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -2608,7 +3385,7 @@ const AssignTaskModal = ({ onClose, projectTasks, dailyScheduleState, currentDat
   );
 
   const relevantScheduleActivities = dailyScheduleState.filter(activity =>
-    activity.type === 'academic' || activity.id === 'flexible-afternoon'
+    activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon') // Use originalActivityId for subdivided flexible blocks
   );
 
   return (
