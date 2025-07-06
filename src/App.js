@@ -151,7 +151,7 @@ const initialDefaultSchedule = {
   }
 };
 
-const generateScheduleForDate = (date, templateType, considerFasting, plannerSchedule, dailyCustomSchedules, fastingDates) => {
+const generateScheduleForDate = (date, templateType, considerFasting, plannerSchedule, dailyCustomSchedules, fastingDates, iqamahConfig) => {
     const dateKey = formatDateToYYYYMMDD(date);
     const isFastingDay = !!fastingDates[dateKey];
     
@@ -201,13 +201,27 @@ const generateScheduleForDate = (date, templateType, considerFasting, plannerSch
 
     let finalSchedule = [];
     activitiesWithoutOverrides.forEach(activity => {
-        const startMinutes = timeToMinutes(activity.plannedStart);
-        let endMinutes = timeToMinutes(activity.plannedEnd);
+      let currentActivity = { ...activity };
+      const manualIqamah = iqamahConfig.manualTimes[dateKey];
+
+      // Apply Iqamah overrides if available and it's a prayer activity
+      if (manualIqamah && currentActivity.type === 'spiritual' && currentActivity.activity.toLowerCase().includes('prayer')) {
+        const prayerNameMatch = currentActivity.activity.toLowerCase().match(/^(fajr|dhuhr|asr|maghrib|isha)/);
+        if (prayerNameMatch && manualIqamah[prayerNameMatch[1]]) {
+          const originalDurationMinutes = timeToMinutes(currentActivity.plannedEnd) - timeToMinutes(currentActivity.plannedStart);
+          currentActivity.plannedStart = manualIqamah[prayerNameMatch[1]];
+          let newEndMinutes = timeToMinutes(currentActivity.plannedStart) + originalDurationMinutes;
+          currentActivity.plannedEnd = minutesToTime(newEndMinutes);
+        }
+      }
+
+        const startMinutes = timeToMinutes(currentActivity.plannedStart);
+        let endMinutes = timeToMinutes(currentActivity.plannedEnd);
         if (endMinutes < startMinutes) endMinutes += 1440;
         const durationMinutes = endMinutes - startMinutes;
 
         // Subdivide flexible blocks
-        if ((activity.activity.includes('Deep Work Mode Flexible Work Block') || activity.activity.includes('Flexible Block / Errands / Relax / Family Time')) && durationMinutes > MAX_SUB_BLOCK_MINUTES) {
+        if ((currentActivity.activity.includes('Deep Work Mode Flexible Work Block') || currentActivity.activity.includes('Flexible Block / Errands / Relax / Family Time')) && durationMinutes > MAX_SUB_BLOCK_MINUTES) {
             let currentSubStartMinutes = startMinutes;
             let partCounter = 1;
             while (currentSubStartMinutes < endMinutes) {
@@ -216,10 +230,10 @@ const generateScheduleForDate = (date, templateType, considerFasting, plannerSch
                     subEndMinutes = endMinutes;
                 }
                 finalSchedule.push({
-                    ...activity,
-                    id: `${activity.id}-part-${partCounter}`,
-                    originalActivityId: activity.id,
-                    activity: `${activity.activity} (Part ${partCounter})`,
+                    ...currentActivity,
+                    id: `${currentActivity.id}-part-${partCounter}`,
+                    originalActivityId: currentActivity.id,
+                    activity: `${currentActivity.activity} (Part ${partCounter})`,
                     plannedStart: minutesToTime(currentSubStartMinutes),
                     plannedEnd: minutesToTime(subEndMinutes),
                     durationMinutes: subEndMinutes - currentSubStartMinutes,
@@ -229,7 +243,7 @@ const generateScheduleForDate = (date, templateType, considerFasting, plannerSch
             }
         } else {
             finalSchedule.push({
-                ...activity,
+                ...currentActivity,
                 durationMinutes: durationMinutes,
             });
         }
@@ -410,7 +424,8 @@ function App() {
   const [activeTab, setActiveTab] = useState('schedule');
   const [reportDate, setReportDate] = useState(new Date());
   const intervalRef = useRef(null);
-  const audioRef = useRef(new Audio('https://www.soundjay.com/buttons/beep-07.mp3'));
+  // Changed audio source to a more common format
+  const audioRef = useRef(new Audio('https://www.soundjay.com/misc/bell-ringing-01.mp3'));
   const [currentActivityId, setCurrentActivityId] = useState(null);
 
   const [dailyScheduleState, setDailyScheduleState] = useState([]); // This will be the effective schedule for the current day
@@ -483,8 +498,6 @@ function App() {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingSubtaskNameId, setEditingSubtaskNameId] = useState(null);
 
-  const [showEisenhowerMatrix, setShowEisenhowerMatrix] = useState(false);
-
   const [isAssignTaskModalOpen, setIsAssignTaskModal] = useState(false);
   const [assigningToActivity, setAssigningToActivity] = useState(null);
   const [assigningFromTask, setAssigningFromTask] = useState(null);
@@ -543,6 +556,22 @@ function App() {
 
   // State for switching between calendar and list view
   const [scheduleViewMode, setScheduleViewMode] = useState('calendar');
+  const [taskViewMode, setTaskViewMode] = useState('list'); // New state for task view mode
+
+  // Iqamah Times State
+  const [iqamahConfig, setIqamahConfig] = useState(() => {
+    try {
+      const savedIqamahConfig = localStorage.getItem('iqamahConfig');
+      return savedIqamahConfig ? JSON.parse(savedIqamahConfig) : {
+        url: '',
+        autoFetch: false,
+        manualTimes: {}, // { 'YYYY-MM-DD': { fajr: 'HH:MM', dhuhr: 'HH:MM', ... } }
+      };
+    } catch (error) {
+      console.error("Failed to parse iqamahConfig from localStorage:", error);
+      return { url: '', autoFetch: false, manualTimes: {} };
+    }
+  });
 
 
   // --- Effects for Local Storage ---
@@ -560,6 +589,8 @@ function App() {
   useEffect(() => { localStorage.setItem('projectTasks', JSON.stringify(projectTasks)); }, [projectTasks]);
   useEffect(() => { localStorage.setItem('fastingDates', JSON.stringify(fastingDates)); }, [fastingDates]);
   useEffect(() => { localStorage.setItem('dailyCustomSchedules', JSON.stringify(dailyCustomSchedules)); }, [dailyCustomSchedules]);
+  useEffect(() => { localStorage.setItem('iqamahConfig', JSON.stringify(iqamahConfig)); }, [iqamahConfig]);
+
 
   // Reset remindersShownToday when currentDate changes
   useEffect(() => { remindersShownToday.current = new Set(); }, [currentDate]);
@@ -837,20 +868,6 @@ function App() {
     setCurrentDate(newDate);
   };
 
-  // Removed handleToggleFastingDay as per request
-  // const handleToggleFastingDay = (date) => {
-  //   const dateYYYYMMDD = formatDateToYYYYMMDD(date);
-  //   setFastingDates(prev => {
-  //     const newFastingDates = { ...prev };
-  //     if (newFastingDates[dateYYYYMMDD]) {
-  //       delete newFastingDates[dateYYYYMMDD];
-  //     } else {
-  //       newFastingDates[dateYYYYMMDD] = true;
-  //     }
-  //     return newFastingDates;
-  //   });
-  // };
-
   const getReportData = useCallback(() => {
     const reportDateStr = reportDate.toISOString().split('T')[0];
     const dailyLogs = activityLogs.filter(log => log.date === reportDateStr);
@@ -1090,7 +1107,7 @@ function App() {
     setDailyCustomSchedules(prev => {
       // If no custom schedule exists for this day, initialize it from the generated schedule
       const currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] :
-                                 generateScheduleForDate(currentDate, null, true, plannerSchedule, prev, fastingDates);
+                                 generateScheduleForDate(currentDate, null, true, plannerSchedule, prev, fastingDates, iqamahConfig);
       let newDaySchedule;
 
       if (updatedActivity.isNew) {
@@ -1109,7 +1126,7 @@ function App() {
 
   const handleApplyTemplateToDailyPlan = () => {
     const dateKey = formatDateToYYYYMMDD(currentDate); // Apply to current date
-    const generatedSchedule = generateScheduleForDate(currentDate, selectedBaseTemplate, true, plannerSchedule, dailyCustomSchedules, fastingDates);
+    const generatedSchedule = generateScheduleForDate(currentDate, selectedBaseTemplate, true, plannerSchedule, dailyCustomSchedules, fastingDates, iqamahConfig);
     setDailyCustomSchedules(prev => ({ ...prev, [dateKey]: generatedSchedule }));
     showToast(`Template '${selectedBaseTemplate}' applied to ${currentDate.toLocaleDateString()}!`, 'success');
   };
@@ -1277,7 +1294,7 @@ function App() {
     if (log && log.linkedTaskId) {
       const task = projectTasks.find(t => t.id === log.linkedTaskId);
       if (task) {
-        const subtask = log.linkedSubtaskId ? task.subtasks?.find(st => st.id === log.linkedSubtaskId) : null;
+        const subtask = log.linkedSubtaskId ? task.subtasks?.find(st => st.id === log.linkedSubtaskI`d`) : null;
         return {
           taskName: task.name, subtaskName: subtask ? subtask.name : null,
           taskId: task.id, subtaskId: subtask ? subtask.id : null,
@@ -1346,6 +1363,8 @@ function App() {
     if (dataManagementOptions.export.subTaskDetails) dataToExport.subTaskDetails = subTaskDetails;
     if (dataManagementOptions.export.fastingDates) dataToExport.fastingDates = fastingDates;
     if (dataManagementOptions.export.dailyCustomSchedules) dataToExport.dailyCustomSchedules = dailyCustomSchedules;
+    if (dataManagementOptions.export.iqamahConfig) dataToExport.iqamahConfig = iqamahConfig;
+
 
     const jsonString = JSON.stringify(dataToExport, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
@@ -1381,6 +1400,8 @@ function App() {
           if (dataManagementOptions.import.subTaskDetails && importedData.subTaskDetails) { setSubTaskDetails(importedData.subTaskDetails); importedCount++; message += "- Activity Notes: Imported\n"; } else if (dataManagementOptions.import.subTaskDetails && !importedData.subTaskDetails) { skippedCount++; message += "- Activity Notes: Skipped (not found in file)\n"; }
           if (dataManagementOptions.import.fastingDates && importedData.fastingDates) { setFastingDates(importedData.fastingDates); importedCount++; message += "- Fasting Dates: Imported\n"; } else if (dataManagementOptions.import.fastingDates && !importedData.fastingDates) { skippedCount++; message += "- Fasting Dates: Skipped (not found in file)\n"; }
           if (dataManagementOptions.import.dailyCustomSchedules && importedData.dailyCustomSchedules) { setDailyCustomSchedules(importedData.dailyCustomSchedules); importedCount++; message += "- Daily Custom Schedules: Imported\n"; } else if (dataManagementOptions.import.dailyCustomSchedules && !importedData.dailyCustomSchedules) { skippedCount++; message += "- Daily Custom Schedules: Skipped (not found in file)\n"; }
+          if (dataManagementOptions.import.iqamahConfig && importedData.iqamahConfig) { setIqamahConfig(importedData.iqamahConfig); importedCount++; message += "- Iqamah Config: Imported\n"; } else if (dataManagementOptions.import.iqamahConfig && !importedData.iqamahConfig) { skippedCount++; message += "- Iqamah Config: Skipped (not found in file)\n"; }
+
 
           if (importedCount === 0 && skippedCount === 0) { message = "No data categories were selected for import or found in the file."; }
           else if (importedCount > 0) { message += "\nData imported successfully!"; }
@@ -1414,7 +1435,7 @@ function App() {
     // Ensure currentDayActivities is a mutable copy of the schedule for the current day
     // If no custom schedule exists for this day, initialize it from the generated schedule before modifying
     let currentDayActivities = dailyCustomSchedules[dateKey] ? [...dailyCustomSchedules[dateKey]] :
-                                 generateScheduleForDate(currentDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates);
+                                 generateScheduleForDate(currentDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates, iqamahConfig);
 
     let activityToModify = currentDayActivities.find(act => act.id === activityId);
     if (!activityToModify) return;
@@ -1438,7 +1459,7 @@ function App() {
         initialEnd: activityToModify.plannedEnd,
       });
     }
-  }, [dailyCustomSchedules, currentDate, dailyScheduleState, plannerSchedule, fastingDates]); // Retained dailyCustomSchedules as it's modified here
+  }, [dailyCustomSchedules, currentDate, plannerSchedule, fastingDates, iqamahConfig]);
 
   const handleMouseMove = useCallback((e) => {
     const dateKey = formatDateToYYYYMMDD(currentDate);
@@ -1451,21 +1472,21 @@ function App() {
 
       const initialStartMinutes = timeToMinutes(draggingActivity.initialStart);
       const initialEndMinutes = timeToMinutes(draggingActivity.initialEnd);
+      // Calculate duration considering overnight activities
       const durationMinutes = (initialEndMinutes < initialStartMinutes ? initialEndMinutes + 1440 : initialEndMinutes) - initialStartMinutes;
 
       let newStartMinutes = initialStartMinutes + minutesDelta;
       let newEndMinutes = newStartMinutes + durationMinutes;
 
-      // Handle wrap around for new times
-      newStartMinutes = (newStartMinutes + 1440) % 1440;
-      newEndMinutes = (newEndMinutes + 1440) % 1440;
-
+      // Ensure times wrap around correctly for HH:MM display
+      const finalPlannedStart = minutesToTime((newStartMinutes % 1440 + 1440) % 1440);
+      const finalPlannedEnd = minutesToTime((newEndMinutes % 1440 + 1440) % 1440);
 
       setDailyCustomSchedules(prev => {
-        const currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] : dailyScheduleState; // Use dailyScheduleState as base if no custom
+        const currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] : dailyScheduleState;
         const updatedSchedule = currentDaySchedule.map(activity => {
           if (activity.id === draggingActivity.id) {
-            return { ...activity, plannedStart: minutesToTime(newStartMinutes), plannedEnd: minutesToTime(newEndMinutes), };
+            return { ...activity, plannedStart: finalPlannedStart, plannedEnd: finalPlannedEnd };
           }
           return activity;
         });
@@ -1476,36 +1497,45 @@ function App() {
       const minutesDelta = Math.round(deltaY / pixelsPerMinute);
 
       setDailyCustomSchedules(prev => {
-        const currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] : dailyScheduleState; // Use dailyScheduleState as base if no custom
+        const currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] : dailyScheduleState;
         const updatedSchedule = currentDaySchedule.map(activity => {
           if (activity.id === resizingActivity.id) {
             let currentStartMinutes = timeToMinutes(resizingActivity.initialStart);
             let currentEndMinutes = timeToMinutes(resizingActivity.initialEnd);
-            if (currentEndMinutes < currentStartMinutes) currentEndMinutes += 1440; // Handle overnight
+
+            // Adjust initialEndMinutes if it crosses midnight relative to initialStartMinutes
+            if (currentEndMinutes < currentStartMinutes) {
+              currentEndMinutes += 1440;
+            }
 
             let newStartMinutes = currentStartMinutes;
             let newEndMinutes = currentEndMinutes;
 
             if (resizingActivity.type === 'bottom') {
               newEndMinutes = currentEndMinutes + minutesDelta;
-              if (newEndMinutes <= newStartMinutes) newEndMinutes = newStartMinutes + 1; // Ensure at least 1 minute duration
+              if (newEndMinutes <= newStartMinutes) {
+                newEndMinutes = newStartMinutes + 1; // Ensure minimum 1 minute duration
+              }
             } else if (resizingActivity.type === 'top') {
               newStartMinutes = currentStartMinutes + minutesDelta;
-              if (newStartMinutes >= newEndMinutes) newStartMinutes = newEndMinutes - 1; // Ensure at least 1 minute duration
+              if (newStartMinutes >= newEndMinutes) {
+                newStartMinutes = newEndMinutes - 1; // Ensure minimum 1 minute duration
+              }
             }
 
-            // Ensure times wrap around correctly if they cross midnight
-            newStartMinutes = (newStartMinutes + 1440) % 1440;
-            newEndMinutes = (newEndMinutes + 1440) % 1440;
+            // Convert back to HH:MM, handling potential midnight crossings for display
+            // The modulo operator handles wrapping around 24 hours (1440 minutes)
+            const finalPlannedStart = minutesToTime((newStartMinutes % 1440 + 1440) % 1440);
+            const finalPlannedEnd = minutesToTime((newEndMinutes % 1440 + 1440) % 1440);
 
-            return { ...activity, plannedStart: minutesToTime(newStartMinutes), plannedEnd: minutesToTime(newEndMinutes), };
+            return { ...activity, plannedStart: finalPlannedStart, plannedEnd: finalPlannedEnd };
           }
           return activity;
         });
         return { ...prev, [dateKey]: updatedSchedule };
       });
     }
-  }, [draggingActivity, resizingActivity, dailyCustomSchedules, currentDate, dailyScheduleState]); // Retained dailyCustomSchedules as it's modified here
+  }, [draggingActivity, resizingActivity, dailyCustomSchedules, currentDate, dailyScheduleState]);
 
   const handleMouseUp = useCallback(() => {
     setDraggingActivity(null);
@@ -1519,7 +1549,7 @@ function App() {
     } else {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
-    }
+    };
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
@@ -1541,12 +1571,12 @@ function App() {
     const heightPx = durationMinutes * pixelsPerMinute;
 
     return { top: `${topPx}px`, height: `${heightPx}px`, };
-  }, [plannerTimelineRef]); // Removed dailyCustomSchedules from dependencies as it's not directly used here
+  }, [plannerTimelineRef]);
 
   // Effect to update dailyScheduleState whenever currentDate or underlying data changes
   useEffect(() => {
-    setDailyScheduleState(generateScheduleForDate(currentDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates));
-  }, [currentDate, plannerSchedule, dailyCustomSchedules, fastingDates]);
+    setDailyScheduleState(generateScheduleForDate(currentDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates, iqamahConfig));
+  }, [currentDate, plannerSchedule, dailyCustomSchedules, fastingDates, iqamahConfig]);
 
   // --- AI Schedule Refinement Function (Integrated) ---
   const refineScheduleWithAI = useCallback(async (userInput) => {
@@ -1557,50 +1587,52 @@ function App() {
 
     showToast("Processing AI command...", "info");
 
-    const responseSchema = {
-      type: "OBJECT",
-      properties: {
-        action: { type: "STRING", enum: ["modify_activity", "shift_activities", "add_activity", "delete_activity"] },
-        activityName: { type: "STRING", description: "Name or part of the activity to target" },
-        targetDate: { type: "STRING", description: "Date for the change (e.g., 'today', 'tomorrow', 'YYYY-MM-DD')" },
-        newPlannedStart: { type: "STRING", description: "New start time in HH:MM format (optional)" },
-        newPlannedEnd: { type: "STRING", description: "New end time in HH:MM format (optional)" },
-        durationChangeMinutes: { type: "NUMBER", description: "Change in duration in minutes (e.g., 15 for +15m, -30 for -30m)" },
-        shiftMinutes: { type: "NUMBER", description: "Amount to shift activities in minutes (e.g., 30 for +30m, -15 for -15m)" },
-        activityTypeFilter: { type: "STRING", enum: ["personal", "academic", "spiritual", "physical", "work", "project"], description: "Filter activities by type for shifts (optional)" },
-      },
-      required: ["action"]
-    };
-
-    const messages = [];
-    messages.push({ role: "user", content: `Parse this schedule modification request into JSON: "${userInput}". Be precise with activity names and times. If a time is not specified, do not include it. Infer 'today' if no date is given. If duration is changed, calculate newPlannedEnd based on newPlannedStart. If an activity name is not clear, suggest options. Use the current date as ${formatDateToYYYYMMDD(currentDate)} for 'today'.` });
+    const chatHistory = [];
+    chatHistory.push({ role: "user", parts: [{ text: `Parse this schedule modification request into JSON: "${userInput}". Be precise with activity names and times. If a time is not specified, do not include it. Infer 'today' if no date is given. If duration is changed, calculate newPlannedEnd based on newPlannedStart. If an activity name is not clear, suggest options. Use the current date as ${formatDateToYYYYMMDD(currentDate)} for 'today'.` }] });
 
     const payload = {
-      model: "deepseek-chat", // Specify Deepseek model
-      messages: messages,
-      response_format: {
-        type: "json_object",
-        schema: responseSchema // Deepseek uses response_format with schema
-      }
+        contents: chatHistory,
+        generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: "OBJECT",
+                properties: {
+                    action: { type: "STRING", enum: ["modify_activity", "shift_activities", "add_activity", "delete_activity"] },
+                    activityName: { type: "STRING", description: "Name or part of the activity to target" },
+                    targetDate: { type: "STRING", description: "Date for the change (e.g., 'today', 'tomorrow', 'YYYY-MM-DD')" },
+                    newPlannedStart: { type: "STRING", description: "New start time in HH:MM format (optional)" },
+                    newPlannedEnd: { type: "STRING", description: "New end time in HH:MM format (optional)" },
+                    durationChangeMinutes: { type: "NUMBER", description: "Change in duration in minutes (e.g., 15 for +15m, -30 for -30m)" },
+                    shiftMinutes: { type: "NUMBER", description: "Amount to shift activities in minutes (e.g., 30 for +30m, -15 for -15m)" },
+                    activityTypeFilter: { type: "STRING", enum: ["personal", "academic", "spiritual", "physical", "work", "project"], description: "Filter activities by type for shifts (optional)" },
+                },
+                required: ["action"]
+            }
+        }
     };
 
-    const apiKey = "sk-a70b20df144847ed9ed258eec2b563ec"; // Canvas will automatically provide this at runtime
-    const apiUrl = `https://api.deepseek.com/chat/completions`; // Deepseek API endpoint
+    const apiKey = ""; // Canvas will automatically provide this at runtime
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
     try {
       const response = await fetch(apiUrl, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}` // Deepseek uses Authorization header
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
       const result = await response.json();
 
-      if (result.choices && result.choices.length > 0 && result.choices[0].message && result.choices[0].message.content) {
-        const jsonString = result.choices[0].message.content;
+      if (!response.ok) {
+        let errorMessage = `API Error: ${response.status} ${response.statusText}`;
+        if (result.error && result.error.message) {
+          errorMessage += `: ${result.error.message}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      if (result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0) {
+        const jsonString = result.candidates[0].content.parts[0].text;
         const parsedCommand = JSON.parse(jsonString);
         console.log("AI Parsed Command:", parsedCommand);
 
@@ -1612,7 +1644,7 @@ function App() {
         setDailyCustomSchedules(prevDailySchedules => {
           // Ensure we are working on a mutable copy of the current day's schedule
           let currentDayActivities = prevDailySchedules[dateKey] ? [...prevDailySchedules[dateKey]] :
-                                       generateScheduleForDate(targetDateObj, null, true, plannerSchedule, prevDailySchedules, fastingDates);
+                                       generateScheduleForDate(targetDateObj, null, true, plannerSchedule, prevDailySchedules, fastingDates, iqamahConfig);
           let updatedDayActivities = [...currentDayActivities];
           let changesApplied = false;
           let conflictDetected = false;
@@ -1781,10 +1813,77 @@ function App() {
         showToast("AI could not understand the command. Please try rephrasing.", "error");
       }
     } catch (error) {
-      console.error("Error calling Deepseek API:", error);
+      console.error("Error calling Gemini API:", error);
       showToast(`Error communicating with AI: ${error.message}. Please check your API key and try again later.`, "error");
     }
-  }, [currentDate, dailyCustomSchedules, plannerSchedule, fastingDates, showToast]);
+  }, [currentDate, dailyCustomSchedules, plannerSchedule, fastingDates, iqamahConfig, showToast]);
+
+  // --- Iqamah Times Handlers ---
+  const handleFetchIqamahTimes = useCallback(async () => {
+    if (!iqamahConfig.url) {
+      showToast("Iqamah URL is empty. Please provide a URL in settings.", "error");
+      return;
+    }
+    showToast("Fetching Iqamah times...", "info");
+    try {
+      const fetchUrl = iqamahConfig.url.replace('{YYYY-MM-DD}', formatDateToYYYYMMDD(currentDate));
+      const response = await fetch(fetchUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      const dateKey = formatDateToYYYYMMDD(currentDate);
+
+      setIqamahConfig(prev => ({
+        ...prev,
+        manualTimes: {
+          ...prev.manualTimes,
+          [dateKey]: {
+            fajr: data.fajr || prev.manualTimes[dateKey]?.fajr,
+            dhuhr: data.dhuhr || prev.manualTimes[dateKey]?.dhuhr,
+            asr: data.asr || prev.manualTimes[dateKey]?.asr,
+            maghrib: data.maghrib || prev.manualTimes[dateKey]?.maghrib,
+            isha: data.isha || prev.manualTimes[dateKey]?.isha,
+          }
+        }
+      }));
+      showToast("Iqamah times fetched successfully!", "success");
+    } catch (error) {
+      console.error("Error fetching Iqamah times:", error);
+      showToast(`Failed to fetch Iqamah times: ${error.message}`, "error");
+    }
+  }, [iqamahConfig.url, currentDate, showToast]);
+
+  const handleManualIqamahChange = useCallback((prayer, time) => {
+    const dateKey = formatDateToYYYYMMDD(currentDate);
+    setIqamahConfig(prev => ({
+      ...prev,
+      manualTimes: {
+        ...prev.manualTimes,
+        [dateKey]: {
+          ...prev.manualTimes[dateKey],
+          [prayer]: time
+        }
+      }
+    }));
+  }, [currentDate]);
+
+  const handleClearManualIqamah = useCallback(() => {
+    const dateKey = formatDateToYYYYMMDD(currentDate);
+    setIqamahConfig(prev => {
+      const newManualTimes = { ...prev.manualTimes };
+      delete newManualTimes[dateKey];
+      return { ...prev, manualTimes: newManualTimes };
+    });
+    showToast("Manual Iqamah overrides cleared for today.", "info");
+  }, [currentDate, showToast]);
+
+  // Effect to auto-fetch on load if enabled
+  useEffect(() => {
+    if (iqamahConfig.autoFetch && iqamahConfig.url) {
+      handleFetchIqamahTimes();
+    }
+  }, [iqamahConfig.autoFetch, iqamahConfig.url, handleFetchIqamahTimes]);
 
 
   return (
@@ -1859,20 +1958,6 @@ function App() {
                   <ChevronRight size={20} />
                 </button>
               </div>
-
-              {/* Removed Fasting Day Checkbox as per request */}
-              {/* <div className="flex items-center justify-center mb-4">
-                  <input
-                      type="checkbox"
-                      id="isFastingDaySchedule"
-                      checked={!!fastingDates[formatDateToYYYYMMDD(currentDate)]}
-                      onChange={() => handleToggleFastingDay(currentDate)}
-                      className="form-checkbox h-5 w-5 text-indigo-600 rounded"
-                  />
-                  <label htmlFor="isFastingDaySchedule" className="ml-2 text-lg font-medium text-gray-700">
-                      Mark as Fasting Day
-                  </label>
-              </div> */}
 
               {/* Base Template Selection for Current Day */}
               <div className="flex items-center space-x-2 mb-4">
@@ -2165,7 +2250,34 @@ function App() {
               {scheduleViewMode === 'calendar' && (
                 <>
                   {/* Visual Planner Timeline for Daily Editor (Now in Schedule Tab) */}
-                  <div ref={plannerTimelineRef} className="relative w-full h-[720px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200 mb-6">
+                  <div
+                    ref={plannerTimelineRef}
+                    className="relative w-full h-[720px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200 mb-6"
+                    onDoubleClick={(e) => {
+                      const timelineRect = plannerTimelineRef.current.getBoundingClientRect();
+                      const relativeY = e.clientY - timelineRect.top;
+                      const minutesFromMidnight = (relativeY / timelineRect.clientHeight) * 1440;
+                      const snappedMinutes = Math.round(minutesFromMidnight / 15) * 15; // Snap to nearest 15 minutes
+
+                      const newActivityStart = minutesToTime(snappedMinutes);
+                      const newActivityEndMinutes = (snappedMinutes + 60) % 1440; // Default 1 hour duration
+                      const newActivityEnd = minutesToTime(newActivityEndMinutes);
+
+                      setEditingActivity({
+                        id: `new-${Date.now()}`,
+                        activity: 'New Activity',
+                        plannedStart: newActivityStart,
+                        plannedEnd: newActivityEnd,
+                        type: 'personal',
+                        recurrenceType: 'none',
+                        recurrenceDays: [],
+                        constraintType: 'adjustable',
+                        isNew: true,
+                      });
+                      setIsEditingDailySchedule(true); // Always editing the daily custom schedule
+                      setIsActivityModalOpen(true);
+                    }}
+                  >
                     {/* Time Grid Lines and Labels */}
                     {[...Array(25)].map((_, hour) => (
                         <React.Fragment key={hour}>
@@ -2623,78 +2735,32 @@ function App() {
                   <Plus size={20} className="mr-2" /> Add New Task
                 </button>
                 <button
-                  onClick={() => setShowEisenhowerMatrix(prev => !prev)}
-                  className="px-4 py-2 bg-purple-500 text-white rounded-md shadow-md hover:bg-purple-600 transition-colors duration-200 flex items-center"
-                  aria-label={showEisenhowerMatrix ? "Show All Tasks" : "Show Eisenhower Matrix"}
+                  onClick={() => setTaskViewMode('list')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                      taskViewMode === 'list' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
                 >
-                  {showEisenhowerMatrix ? (
-                    <>
-                      <CalendarDays size={20} className="mr-2" /> Show All Tasks
-                    </>
-                  ) : (
-                    <>
-                      <BarChart2 size={20} className="mr-2" /> Show Eisenhower Matrix
-                    </>
-                  )}
+                  <BarChart2 size={18} className="inline-block mr-2" /> List View
+                </button>
+                <button
+                  onClick={() => setTaskViewMode('eisenhower')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                      taskViewMode === 'eisenhower' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  <BarChart2 size={18} className="inline-block mr-2" /> Eisenhower Matrix
+                </button>
+                <button
+                  onClick={() => setTaskViewMode('gantt')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                      taskViewMode === 'gantt' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  <CalendarDays size={18} className="inline-block mr-2" /> Gantt Chart
                 </button>
               </div>
 
-              {showEisenhowerMatrix ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {['Do Now', 'Schedule', 'Delegate', 'Eliminate'].map(quadrant => (
-                    <div key={quadrant} className={`p-4 rounded-lg shadow-md
-                      ${quadrant === 'Do Now' ? 'bg-red-100 border-l-4 border-red-500' : ''}
-                      ${quadrant === 'Schedule' ? 'bg-blue-100 border-l-4 border-blue-500' : ''}
-                      ${quadrant === 'Delegate' ? 'bg-yellow-100 border-l-4 border-yellow-500' : ''}
-                      ${quadrant === 'Eliminate' ? 'bg-gray-100 border-l-4 border-gray-500' : ''}
-                    `}>
-                      <h3 className="text-lg font-bold mb-3">
-                        {quadrant}
-                        <span className="block text-sm font-normal text-gray-600">
-                          {quadrant === 'Do Now' && 'Urgent & Important'}
-                          {quadrant === 'Schedule' && 'Important, Not Urgent'}
-                          {quadrant === 'Delegate' && 'Urgent, Not Important'}
-                          {quadrant === 'Eliminate' && 'Not Urgent, Not Important'}
-                        </span>
-                      </h3>
-                      {eisenhowerTasks[quadrant] && eisenhowerTasks[quadrant].length > 0 ? (
-                        <ul className="space-y-2">
-                          {eisenhowerTasks[quadrant].map(task => (
-                            <li key={task.id} className="bg-white p-3 rounded-md shadow-sm flex items-center justify-between">
-                              <span className="font-medium text-gray-800">{task.name}</span>
-                              <div className="flex space-x-1">
-                                  <button
-                                    onClick={() => handleEditTask(task)}
-                                    className="p-1 text-blue-500 hover:text-blue-700 transition-colors"
-                                    aria-label={`Edit ${task.name}`}
-                                  >
-                                    <Edit size={16} />
-                                  </button>
-                                  <button
-                                      onClick={() => handleSaveTask({...task, actualCompletionDate: formatDateToYYYYMMDD(new Date()), status: 'completed'})}
-                                      className="p-1 text-green-500 hover:text-green-700 transition-colors"
-                                      aria-label={`Mark ${task.name} as complete`}
-                                  >
-                                      <CheckCircle size={16} />
-                                  </button>
-                                  <button
-                                    onClick={() => openAssignTaskModal(null, { taskId: task.id, subtaskId: null })}
-                                    className="p-1 text-indigo-500 hover:text-indigo-700 transition-colors"
-                                    aria-label={`Assign ${task.name} to schedule`}
-                                  >
-                                    <Link size={16} />
-                                  </button>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-sm text-gray-500">No tasks in this quadrant.</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
+              {taskViewMode === 'list' && (
                 <div className="overflow-x-auto">
                   <table className="min-w-full bg-white rounded-lg shadow-md">
                     <thead className="bg-indigo-100">
@@ -2802,6 +2868,67 @@ function App() {
                     </tbody>
                   </table>
                 </div>
+              )}
+
+              {taskViewMode === 'eisenhower' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {['Do Now', 'Schedule', 'Delegate', 'Eliminate'].map(quadrant => (
+                    <div key={quadrant} className={`p-4 rounded-lg shadow-md
+                      ${quadrant === 'Do Now' ? 'bg-red-100 border-l-4 border-red-500' : ''}
+                      ${quadrant === 'Schedule' ? 'bg-blue-100 border-l-4 border-blue-500' : ''}
+                      ${quadrant === 'Delegate' ? 'bg-yellow-100 border-l-4 border-yellow-500' : ''}
+                      ${quadrant === 'Eliminate' ? 'bg-gray-100 border-l-4 border-gray-500' : ''}
+                    `}>
+                      <h3 className="text-lg font-bold mb-3">
+                        {quadrant}
+                        <span className="block text-sm font-normal text-gray-600">
+                          {quadrant === 'Do Now' && 'Urgent & Important'}
+                          {quadrant === 'Schedule' && 'Important, Not Urgent'}
+                          {quadrant === 'Delegate' && 'Urgent, Not Important'}
+                          {quadrant === 'Eliminate' && 'Not Urgent, Not Important'}
+                        </span>
+                      </h3>
+                      {eisenhowerTasks[quadrant] && eisenhowerTasks[quadrant].length > 0 ? (
+                        <ul className="space-y-2">
+                          {eisenhowerTasks[quadrant].map(task => (
+                            <li key={task.id} className="bg-white p-3 rounded-md shadow-sm flex items-center justify-between">
+                              <span className="font-medium text-gray-800">{task.name}</span>
+                              <div className="flex space-x-1">
+                                  <button
+                                    onClick={() => handleEditTask(task)}
+                                    className="p-1 text-blue-500 hover:text-blue-700 transition-colors"
+                                    aria-label={`Edit ${task.name}`}
+                                  >
+                                    <Edit size={16} />
+                                  </button>
+                                  <button
+                                      onClick={() => handleSaveTask({...task, actualCompletionDate: formatDateToYYYYMMDD(new Date()), status: 'completed'})}
+                                      className="p-1 text-green-500 hover:text-green-700 transition-colors"
+                                      aria-label={`Mark ${task.name} as complete`}
+                                  >
+                                      <CheckCircle size={16} />
+                                  </button>
+                                  <button
+                                    onClick={() => openAssignTaskModal(null, { taskId: task.id, subtaskId: null })}
+                                    className="p-1 text-indigo-500 hover:text-indigo-700 transition-colors"
+                                    aria-label={`Assign ${task.name} to schedule`}
+                                  >
+                                    <Link size={16} />
+                                  </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-gray-500">No tasks in this quadrant.</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {taskViewMode === 'gantt' && (
+                <GanttChart projectTasks={projectTasks} />
               )}
             </div>
           )}
@@ -2956,6 +3083,64 @@ function App() {
                   </div>
                 </div>
                 <p className="text-sm text-gray-500 mt-4">Changes are saved automatically.</p>
+              </div>
+
+              {/* Iqamah Times Settings */}
+              <div className="bg-indigo-50 rounded-lg p-4 mb-6 shadow-inner">
+                <h3 className="text-xl font-semibold text-indigo-700 mb-4">Iqamah Times Settings</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="iqamahUrl" className="block text-sm font-medium text-gray-700">Auto-fetch URL (JSON format for prayer times)</label>
+                    <input
+                      type="url"
+                      id="iqamahUrl"
+                      value={iqamahConfig.url}
+                      onChange={(e) => setIqamahConfig(prev => ({ ...prev, url: e.target.value }))}
+                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                      placeholder="e.g., https://api.example.com/prayer-times?date=&#123;YYYY-MM-DD&#125;"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">URL should return JSON like: &#123;"fajr": "05:30", "dhuhr": "13:00", "asr": "17:00", "maghrib": "19:30", "isha": "21:00"&#125;</p>
+                  </div>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={iqamahConfig.autoFetch}
+                      onChange={(e) => setIqamahConfig(prev => ({ ...prev, autoFetch: e.target.checked }))}
+                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">Enable Auto-fetch on App Load</span>
+                  </label>
+                  <button
+                    onClick={handleFetchIqamahTimes}
+                    disabled={!iqamahConfig.url}
+                    className="px-4 py-2 bg-blue-500 text-white rounded-md shadow-md hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Fetch Iqamah Times Now
+                  </button>
+                </div>
+
+                <div className="mt-6">
+                  <h4 className="font-medium text-gray-700 mb-2">Manual Iqamah Overrides (for current day)</h4>
+                  <p className="text-sm text-gray-500 mb-2">Override times for {currentDate.toLocaleDateString()}.</p>
+                  {['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].map(prayer => (
+                    <div key={prayer} className="flex items-center mb-2">
+                      <label htmlFor={`${prayer}-iqamah`} className="w-24 text-sm font-medium text-gray-700 capitalize">{prayer}</label>
+                      <input
+                        type="time"
+                        id={`${prayer}-iqamah`}
+                        value={iqamahConfig.manualTimes[formatDateToYYYYMMDD(currentDate)]?.[prayer] || ''}
+                        onChange={(e) => handleManualIqamahChange(prayer, e.target.value)}
+                        className="ml-2 p-2 border border-gray-300 rounded-md"
+                      />
+                    </div>
+                  ))}
+                  <button
+                    onClick={handleClearManualIqamah}
+                    className="mt-4 px-4 py-2 bg-red-500 text-white rounded-md shadow-md hover:bg-red-600 transition-colors"
+                  >
+                    Clear Manual Overrides for Today
+                  </button>
+                </div>
               </div>
 
               {/* Data Management */}
@@ -3638,6 +3823,141 @@ const AssignTaskModal = ({ onClose, projectTasks, dailyScheduleState, currentDat
           </button>
         </div>
       </div>
+    </div>
+  );
+};
+
+// GanttChart Component
+const GanttChart = ({ projectTasks }) => {
+  const chartRef = useRef(null);
+  const [chartWidth, setChartWidth] = useState(0);
+
+  // Determine the overall date range for the chart
+  const allDates = projectTasks.flatMap(task => [
+    task.targetStartDate,
+    task.deadlineDate,
+    task.actualCompletionDate,
+  ]).filter(Boolean).map(d => new Date(d));
+
+  let minDate = allDates.length > 0 ? new Date(Math.min(...allDates)) : new Date();
+  let maxDate = allDates.length > 0 ? new Date(Math.max(...allDates)) : new Date();
+
+  // Adjust minDate to start of the month for better alignment
+  minDate.setDate(1);
+  minDate.setHours(0,0,0,0);
+
+  // Adjust maxDate to end of the month
+  maxDate.setMonth(maxDate.getMonth() + 1);
+  maxDate.setDate(0); // Last day of previous month
+  maxDate.setHours(23,59,59,999);
+
+  // Add some padding to the date range (e.g., one month before and after)
+  minDate.setMonth(minDate.getMonth() - 1);
+  maxDate.setMonth(maxDate.getMonth() + 1);
+
+  const totalDays = (maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      if (chartRef.current) {
+        setChartWidth(chartRef.current.clientWidth);
+      }
+    };
+    updateWidth();
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, []);
+
+  const pixelsPerDay = chartWidth / totalDays;
+
+  const getPositionAndWidth = (startDateStr, endDateStr) => {
+    if (!startDateStr) return { left: 0, width: 0 };
+
+    const startDate = new Date(startDateStr);
+    let endDate = endDateStr ? new Date(endDateStr) : new Date(); // If no end, extends to today
+
+    // Ensure dates are just dates, not times
+    startDate.setHours(0,0,0,0);
+    endDate.setHours(23,59,59,999); // End of day
+
+    const startOffsetDays = (startDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24);
+    const durationDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+
+    const left = startOffsetDays * pixelsPerDay;
+    const width = durationDays * pixelsPerDay;
+    return { left, width: Math.max(width, 1) }; // Ensure minimum width of 1px
+  };
+
+  // Generate month labels
+  const monthLabels = [];
+  let currentMonth = new Date(minDate);
+  while (currentMonth <= maxDate) {
+    monthLabels.push({
+      date: new Date(currentMonth),
+      left: ((currentMonth.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) * pixelsPerDay,
+    });
+    currentMonth.setMonth(currentMonth.getMonth() + 1);
+  }
+
+  return (
+    <div className="bg-white rounded-lg shadow-md p-4 overflow-x-auto">
+      <h3 className="text-xl font-semibold text-indigo-700 mb-4">Project Gantt Chart</h3>
+      <div className="relative border border-gray-200 rounded-md" ref={chartRef} style={{ minWidth: '800px', height: 'auto' }}>
+        {/* Month Grid */}
+        {monthLabels.map((month, index) => (
+          <div
+            key={index}
+            className="absolute top-0 bottom-0 border-l border-gray-300 text-xs text-gray-500 pt-1 px-2"
+            style={{ left: `${month.left}px` }}
+          >
+            {month.date.toLocaleString('en-US', { month: 'short', year: '2-digit' })}
+          </div>
+        ))}
+        {/* Today Line */}
+        <div
+          className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
+          style={{ left: `${((new Date().setHours(0,0,0,0) - minDate.getTime()) / (1000 * 60 * 60 * 24)) * pixelsPerDay}px` }}
+        >
+          <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs text-red-700 font-bold">Today</span>
+        </div>
+
+        {/* Task Rows */}
+        <div className="pt-10 pb-4"> {/* Padding for month labels */}
+          {projectTasks.map((task) => {
+            const planned = getPositionAndWidth(task.targetStartDate, task.deadlineDate);
+            const actual = getPositionAndWidth(task.targetStartDate, task.actualCompletionDate || formatDateToYYYYMMDD(new Date())); // Actual ends today if not completed
+
+            return (
+              <div key={task.id} className="relative h-12 mb-2">
+                <div className="absolute left-0 w-32 text-sm font-medium text-gray-700 truncate pr-2" style={{ top: '50%', transform: 'translateY(-50%)' }}>
+                  {task.name}
+                </div>
+                <div className="ml-36 relative h-full">
+                  {planned.width > 0 && (
+                    <div
+                      className="absolute h-4 bg-blue-300 rounded-sm opacity-75"
+                      style={{ left: `${planned.left}px`, width: `${planned.width}px`, top: '0%' }}
+                      title={`Planned: ${task.targetStartDate || 'N/A'} to ${task.deadlineDate || 'N/A'}`}
+                    ></div>
+                  )}
+                  {actual.width > 0 && (
+                    <div
+                      className={`absolute h-4 rounded-sm
+                        ${task.actualCompletionDate ? 'bg-green-500' : 'bg-yellow-500'}
+                      `}
+                      style={{ left: `${actual.left}px`, width: `${actual.width}px`, top: '50%', transform: 'translateY(-50%)' }}
+                      title={`Actual: ${task.targetStartDate || 'N/A'} to ${task.actualCompletionDate || 'Today'}`}
+                    ></div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <p className="text-sm text-gray-500 mt-4">
+        Blue bars represent planned timelines. Green bars represent completed actual timelines. Yellow bars represent ongoing actual timelines.
+      </p>
     </div>
   );
 };
