@@ -2334,25 +2334,26 @@ const handleFetchIqamahTimes = useCallback(async () => {
       setIsExportingGCal(false);
     }
   }, [appSettings.googleCalendarConnected, currentDate, subTaskDetails, showToast]);
-const handleReconnectGoogleCalendar = useCallback(() => {
+// Handle Reconnect Google Calendar
+  const handleReconnectGoogleCalendar = useCallback(() => {
     setIsConnectingGCal(true);
     setAppSettings(prev => ({ ...prev, googleCalendarConnected: false })); // Force disconnect state
     gapiLoaded.current = false; // Reset GAPI loaded status
     gsiLoaded.current = false;  // Reset GSI loaded status
-    tokenClientRef.current = null; // Clear token client reference
+    tokenClientRef.current = null; // Clear token client reference to force re-initialization
 
     showToast('Attempting to reconnect Google Calendar...', 'info', 5000);
 
-    // Re-initialize GAPI and GSI (this will be handled by the useEffect)
-    // Then, call connectGoogleCalendar to initiate the auth flow
-    // A small timeout ensures the state updates propagate before re-triggering the OAuth flow
+    // This setTimeout is crucial because state updates (like setAppSettings) are batched.
+    // We need to ensure the component re-renders and the useEffect for loading GAPI/GSI
+    // has a chance to re-initialize `tokenClientRef.current` if it was cleared.
     setTimeout(() => {
-      // The useEffect for loading gapi/gsi will re-run due to appSettings.googleClientId change
-      // and gapiLoaded/gsiLoaded being false.
-      // After libraries are re-loaded, connectGoogleCalendar will be called.
+      // Ensure GSI is loaded before trying to initialize tokenClient
       if (window.google && window.google.accounts && window.google.accounts.oauth2) {
-         // Re-initialize tokenClient if it's null (it should be after clearing tokenClientRef.current)
-         tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+        // Only re-initialize tokenClient if it's null (it should be after clearing tokenClientRef.current)
+        // This ensures a fresh tokenClient instance is created for a new auth flow.
+        if (!tokenClientRef.current) {
+          tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
             client_id: appSettings.googleClientId,
             scope: 'https://www.googleapis.com/auth/calendar.events',
             callback: (tokenResponse) => {
@@ -2372,11 +2373,19 @@ const handleReconnectGoogleCalendar = useCallback(() => {
               setIsConnectingGCal(false);
             }
           });
+        }
+        // Always request access token after ensuring tokenClient is initialized
+        try {
           tokenClientRef.current.requestAccessToken();
-      } else {
-          console.warn('Google Identity Services not available for immediate reconnect. Please refresh page if issues persist.');
-          showToast('Failed to re-initialize Google Calendar connection. Please refresh the page.', 'error', 7000);
+        } catch (error) {
+          console.error('Error requesting access token during reconnect:', error);
+          showToast('Failed to initiate Google Calendar reconnection. See console for details.', 'error', 7000);
           setIsConnectingGCal(false);
+        }
+      } else {
+        console.warn('Google Identity Services not available for immediate reconnect. Please refresh page if issues persist.');
+        showToast('Failed to re-initialize Google Calendar connection. Please refresh the page.', 'error', 7000);
+        setIsConnectingGCal(false);
       }
     }, 100); // Small delay to allow state to update
   }, [setAppSettings, showToast, appSettings.googleClientId, setIsConnectingGCal]);
@@ -2429,7 +2438,7 @@ const handleReconnectGoogleCalendar = useCallback(() => {
         <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
           {/* Header and Tabs */}
           <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.12</span></h1>
+            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.13</span></h1>
             <div className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('schedule')}
@@ -2495,24 +2504,45 @@ const handleReconnectGoogleCalendar = useCallback(() => {
                   <ChevronRight size={20} />
                 </button>
               </div>
-              {/* NEW: Google Calendar Import Date Range */}
-              <div className="flex items-center space-x-2 mb-4">
-                <label htmlFor="gCalImportStartDate" className="block text-sm font-medium text-gray-700">Import GCal From:</label>
-                <input
-                  type="date"
-                  id="gCalImportStartDate"
-                  value={formatDateToYYYYMMDD(gCalImportStartDate)}
-                  onChange={(e) => setGCalImportStartDate(new Date(e.target.value))}
-                  className="p-2 border border-gray-300 rounded-md"
-                />
-                <label htmlFor="gCalImportEndDate" className="block text-sm font-medium text-gray-700">To:</label>
-                <input
-                  type="date"
-                  id="gCalImportEndDate"
-                  value={formatDateToYYYYMMDD(gCalImportEndDate)}
-                  onChange={(e) => setGCalImportEndDate(new Date(e.target.value))}
-                  className="p-2 border border-gray-300 rounded-md"
-                />
+              {/* NEW: Google Calendar Import Date Range & Button */}
+              <div className="flex flex-wrap items-end gap-2 mb-4"> {/* Use items-end to align button with text inputs */}
+                <div className="flex-grow"> {/* Allows date pickers to take available space */}
+                  <label htmlFor="gCalImportStartDate" className="block text-sm font-medium text-gray-700">Import GCal From:</label>
+                  <input
+                    type="date"
+                    id="gCalImportStartDate"
+                    value={formatDateToYYYYMMDD(gCalImportStartDate)}
+                    onChange={(e) => setGCalImportStartDate(new Date(e.target.value))}
+                    className="p-2 border border-gray-300 rounded-md w-full"
+                  />
+                </div>
+                <div className="flex-grow"> {/* Allows date pickers to take available space */}
+                  <label htmlFor="gCalImportEndDate" className="block text-sm font-medium text-gray-700">To:</label>
+                  <input
+                    type="date"
+                    id="gCalImportEndDate"
+                    value={formatDateToYYYYMMDD(gCalImportEndDate)}
+                    onChange={(e) => setGCalImportEndDate(new Date(e.target.value))}
+                    className="p-2 border border-gray-300 rounded-md w-full"
+                  />
+                </div>
+                {/* Import Google Calendar Meetings Button - now part of the flex container */}
+                <button
+                    onClick={fetchGoogleCalendarMeetings}
+                    disabled={!appSettings.googleCalendarConnected || isImportingGCal}
+                    className="px-4 py-2 bg-purple-500 text-white rounded-md shadow-md hover:bg-purple-600 transition-colors duration-200 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label="Import Google Calendar Meetings"
+                >
+                    {isImportingGCal ? (
+                      <>
+                        <span className="animate-spin mr-2">🔄</span> Importing...
+                      </>
+                    ) : (
+                      <>
+                        <Download size={18} className="inline-block mr-2" /> Import GCal
+                      </>
+                    )}
+                </button>
               </div>
 
               {/* Base Template Selection for Current Day */}
@@ -2535,23 +2565,6 @@ const handleReconnectGoogleCalendar = useCallback(() => {
                       aria-label="Apply selected template"
                   >
                       Apply Template
-                  </button>
-                {/* NEW: Import Google Calendar Meetings Button */}
-                  <button
-                      onClick={fetchGoogleCalendarMeetings}
-                      disabled={!appSettings.googleCalendarConnected || isImportingGCal}
-                      className="px-4 py-2 bg-purple-500 text-white rounded-md shadow-md hover:bg-purple-600 transition-colors duration-200 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-                      aria-label="Import Google Calendar Meetings"
-                  >
-                      {isImportingGCal ? (
-                        <>
-                          <span className="animate-spin mr-2">🔄</span> Importing...
-                        </>
-                      ) : (
-                        <>
-                          <Download size={18} className="inline-block mr-2" /> Import GCal
-                        </>
-                      )}
                   </button>
               </div>
 
@@ -2938,6 +2951,17 @@ const handleReconnectGoogleCalendar = useCallback(() => {
                             title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
                         >
                             <span className={`text-sm text-gray-800 truncate whitespace-nowrap overflow-hidden text-ellipsis ${isPrayerBlock ? 'font-bold' : 'font-normal'}`}>{`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}</span>
+                            {/* NEW: Delete Button for Calendar View */}
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation(); // Prevent drag/resize or double-click from firing
+                                    handleDeleteDailyActivity(activity.id);
+                                }}
+                                className="absolute top-1 right-1 p-0.5 rounded-full bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-150 hover:bg-red-600"
+                                aria-label={`Delete ${activity.activity}`}
+                            >
+                                <X size={12} />
+                            </button>
                             {/* Visual indicators for resize areas (optional, but good for UX) */}
                             <div className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity duration-100"></div>
                             <div className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity duration-100"></div>
@@ -3189,6 +3213,12 @@ const handleReconnectGoogleCalendar = useCallback(() => {
                                                   className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
                                                   {isExportingGCal ? 'Adding...' : 'Add to Google Calendar'}
+                                                </button>
+                                                <button
+                                                  onClick={() => handleEditDailyActivity(activity)}
+                                                  className="block w-full text-left px-4 py-2 text-sm text-blue-700 hover:bg-blue-100"
+                                                >
+                                                  Edit Activity
                                                 </button>
                                                 {/* NEW: Delete Daily Activity Button */}
                                                 <button
