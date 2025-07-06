@@ -436,12 +436,13 @@ function App() {
   const [appSettings, setAppSettings] = useState(() => {
     try {
       const savedSettings = localStorage.getItem('appSettings');
-      return savedSettings ? JSON.parse(savedSettings) : { geminiApiKey: '', location: { city: '', country: '' } };
+      return savedSettings ? JSON.parse(savedSettings) : { geminiApiKey: '', location: { city: '', country: '' } , iqamahUrl: 'https://time.my-masjid.com/timingscreen/0b7437f8-2ee4-407a-83a3-f23990ca3f0a'};
     } catch (error) {
       console.error("Failed to parse appSettings from localStorage:", error);
-      return { geminiApiKey: '', location: { city: '', country: '' } };
+      return { geminiApiKey: '', location: { city: '', country: '' } , iqamahUrl: 'https://time.my-masjid.com/timingscreen/0b7437f8-2ee4-407a-83a3-f23990ca3f0a'};
     }
   });
+  
   const [pomodoroTimer, setPomodoroTimer] = useState({
     running: false,
     mode: 'work',
@@ -597,12 +598,23 @@ function App() {
   const [iqamahConfig, setIqamahConfig] = useState(() => {
     try {
       const savedIqamahConfig = localStorage.getItem('iqamahConfig');
-      return savedIqamahConfig ? JSON.parse(savedIqamahConfig) : {
-        manualTimes: {}, // { 'YYYY-MM-DD': { fajr: 'HH:MM', dhuhr: 'HH:MM', ... } }
+      const parsedConfig = savedIqamahConfig ? JSON.parse(savedIqamahConfig) : {
+        manualTimes: { // Added default times for today if config is new
+          [formatDateToYYYYMMDD(new Date())]: {
+            fajr: '05:30', dhuhr: '13:30', asr: '17:30', maghrib: '20:30', isha: '22:00'
+          }
+        },
       };
+      return parsedConfig;
     } catch (error) {
       console.error("Failed to parse iqamahConfig from localStorage:", error);
-      return { manualTimes: {} };
+      return {
+        manualTimes: {
+          [formatDateToYYYYMMDD(new Date())]: {
+            fajr: '05:30', dhuhr: '13:30', asr: '17:30', maghrib: '20:30', isha: '22:00'
+          }
+        }
+      };
     }
   });
 
@@ -1962,13 +1974,23 @@ function App() {
   }, [currentDate, dailyScheduleState, dailyCustomSchedules, plannerSchedule, fastingDates, iqamahConfig, showToast, appSettings.geminiApiKey]);
 
   // --- Iqamah Times Handlers ---
-  const handleFetchIqamahTimes = useCallback(async () => {
+const handleFetchIqamahTimes = useCallback(async () => {
     if (!appSettings.geminiApiKey) {
       showToast("Please enter your Gemini API Key in Settings to fetch Iqamah times.", "error", 5000);
       return;
     }
-    if (!appSettings.location.city || !appSettings.location.country) {
-      showToast("Please enter your City and Country in Settings to fetch Iqamah times.", "error", 5000);
+
+    let promptText = '';
+    let disabledReason = '';
+
+    if (appSettings.iqamahUrl) {
+      promptText = `Browse the content of this URL: ${appSettings.iqamahUrl}. From the content, extract the Iqamah (or prayer) times for Fajr, Dhuhr, Asr, Maghrib, and Isha for today, ${formatDateToYYYYMMDD(currentDate)}. If a specific Iqamah time is not found, provide the general prayer time for that prayer. Respond in JSON format only. If no times can be found for a specific prayer, return an empty string for its value.
+      JSON format: {"fajr": "HH:MM", "dhuhr": "HH:MM", "asr": "HH:MM", "maghrib": "HH:MM", "isha": "HH:MM"}`;
+    } else if (appSettings.location.city && appSettings.location.country) {
+      promptText = `Provide Iqamah prayer times for ${formatDateToYYYYMMDD(currentDate)} for ${appSettings.location.city}, ${appSettings.location.country}. Respond in JSON format only. If you cannot find exact Iqamah times, provide approximate prayer times (e.g., based on calculated prayer times for the location). If no times can be found, return empty strings for values.
+      JSON format: {"fajr": "HH:MM", "dhuhr": "HH:MM", "asr": "HH:MM", "maghrib": "HH:MM", "isha": "HH:MM"}`;
+    } else {
+      showToast("Please enter either your City and Country OR an Iqamah Times URL in Settings to fetch Iqamah times.", "error", 5000);
       return;
     }
 
@@ -1977,13 +1999,10 @@ function App() {
     const chatHistory = [];
     chatHistory.push({
       role: "user",
-      parts: [{
-        text: `Provide Iqamah prayer times for ${formatDateToYYYYMMDD(currentDate)} for ${appSettings.location.city}, ${appSettings.location.country}. Respond in JSON format only. If you cannot find exact Iqamah times, provide approximate prayer times (e.g., based on calculated prayer times for the location). If no times can be found, return empty strings for values.
-        JSON format: {"fajr": "HH:MM", "dhuhr": "HH:MM", "asr": "HH:MM", "maghrib": "HH:MM", "isha": "HH:MM"}`
-      }]
+      parts: [{ text: promptText }] // Use the dynamically created promptText
     });
 
-    const payload = { // Renamed from payload2
+    const payload = {
       contents: chatHistory,
       generationConfig: {
         responseMimeType: "application/json",
@@ -2007,7 +2026,7 @@ function App() {
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload) // Use the local payload
+        body: JSON.stringify(payload)
       });
 
       const result = await response.json();
@@ -2047,7 +2066,7 @@ function App() {
       console.error("Error calling Gemini API for Iqamah times:", error);
       showToast(`Failed to fetch Iqamah times via AI: ${error.message}.`, "error");
     }
-  }, [appSettings.geminiApiKey, appSettings.location, currentDate, showToast]);
+  }, [appSettings.geminiApiKey, appSettings.location, appSettings.iqamahUrl, currentDate, showToast]);
 
 
   const handleManualIqamahChange = useCallback((prayer, time) => {
@@ -2083,7 +2102,7 @@ function App() {
         <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
           {/* Header and Tabs */}
           <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.5</span></h1>
+            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.6</span></h1>
             <div className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('schedule')}
@@ -2452,7 +2471,7 @@ function App() {
                   {/* Visual Planner Timeline for Daily Editor (Now in Schedule Tab) */}
                   <div
                     ref={plannerTimelineRef}
-                    className="relative w-full h-[2880px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border-4 border-gray-900 mb-6"
+                    className="relative w-full h-[2880px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-300 mb-6"
                     onDoubleClick={(e) => {
                       // Check if the double-click occurred directly on the timeline (not on an activity block)
                       // This is implicitly handled by stopping propagation in activity blocks.
@@ -2530,7 +2549,7 @@ function App() {
                             ${activity.id === currentActivityId ? 'border-l-4 border-indigo-600' : 'border-l-2 border-transparent'}
                             ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
                             group // Add group class for hover effects
-                            border border-gray-300 hover:shadow-md transition-shadow duration-150
+                            border-3 border-gray-700 hover:shadow-md transition-shadow duration-150
                             `}
                             style={{ top, height }}
                             onDoubleClick={(e) => { // Double-click to edit
@@ -3385,9 +3404,24 @@ function App() {
                       placeholder="e.g., UK"
                     />
                   </div>
+                  {/* NEW URL INPUT FIELD */}
+                  <div>
+                    <label htmlFor="iqamahUrl" className="block text-sm font-medium text-gray-700">Iqamah Times URL (Optional)</label>
+                    <input
+                      type="url"
+                      id="iqamahUrl"
+                      value={appSettings.iqamahUrl}
+                      onChange={(e) => setAppSettings(prev => ({ ...prev, iqamahUrl: e.target.value }))}
+                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                      placeholder="e.g., https://time.my-masjid.com/timingscreen/..."
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      If provided, AI will attempt to fetch times from this URL instead of using city/country.
+                    </p>
+                  </div>
                   <button
                     onClick={handleFetchIqamahTimes}
-                    disabled={!appSettings.geminiApiKey || !appSettings.location.city || !appSettings.location.country}
+                    disabled={!appSettings.geminiApiKey || (!appSettings.iqamahUrl && (!appSettings.location.city || !appSettings.location.country))}
                     className="px-4 py-2 bg-blue-500 text-white rounded-md shadow-md hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Fetch Iqamah Times Now (via AI)
