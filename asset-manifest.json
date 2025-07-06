@@ -1,15 +1,15 @@
 {
   "files": {
-    "main.css": "/myScheduleApp/static/css/main.9baaf7a7.css",
-    "main.js": "/myScheduleApp/static/js/main.7f23567a.js",
+    "main.css": "/myScheduleApp/static/css/main.1e8572ca.css",
+    "main.js": "/myScheduleApp/static/js/main.d36bef0b.js",
     "static/js/453.2298a555.chunk.js": "/myScheduleApp/static/js/453.2298a555.chunk.js",
     "index.html": "/myScheduleApp/index.html",
-    "main.9baaf7a7.css.map": "/myScheduleApp/static/css/main.9baaf7a7.css.map",
-    "main.7f23567a.js.map": "/myScheduleApp/static/js/main.7f23567a.js.map",
+    "main.1e8572ca.css.map": "/myScheduleApp/static/css/main.1e8572ca.css.map",
+    "main.d36bef0b.js.map": "/myScheduleApp/static/js/main.d36bef0b.js.map",
     "453.2298a555.chunk.js.map": "/myScheduleApp/static/js/453.2298a555.chunk.js.map"
   },
   "entrypoints": [
-    "static/css/main.9baaf7a7.css",
-    "static/js/main.7f23567a.js"
+    "static/css/main.1e8572ca.css",
+    "static/js/main.d36bef0b.js"
   ]
 }
