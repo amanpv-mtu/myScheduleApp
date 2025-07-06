@@ -16,7 +16,10 @@ const parseTime = (timeStr, dateContext = new Date()) => {
 
 const formatDateTime = (date) => {
   if (!date) return '';
-  return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  // Ensure date is a valid Date object before formatting
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return ''; // Return empty string if date is invalid
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 };
 
 const formatTo24HourTime = (date) => {
@@ -135,7 +138,7 @@ const initialDefaultSchedule = {
     { id: 'maghrib-prayer-jumuah', activity: 'Maghrib Iqamah & Prayer', plannedStart: '21:55', plannedEnd: '22:15', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
     { id: 'quran-evening-jumuah', activity: 'Evening Routine / Quran / Prepare for Bed', plannedStart: '22:15', plannedEnd: '23:15', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
     { id: 'isha-prep-jumuah', activity: 'Prepare for Isha', plannedStart: '23:15', plannedEnd: '23:25', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
-    { id: 'isha-prayer-jumuah', activity: 'Isha Iqamah & Prayer', plannedStart: '23:25', plannedEnd: '23:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'isha-prayer-jumuah', plannedStart: '23:25', plannedEnd: '23:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
     { id: 'plan-next-day-jumuah', activity: 'Plan Next Day', plannedStart: '23:45', plannedEnd: '23:55', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
     { id: 'pre-sleep-jumuah', activity: 'Pre-Sleep Routine', plannedStart: '23:55', plannedEnd: '00:00', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
     { id: 'sleep-jumuah', activity: 'Lights Out / Sleep', plannedStart: '00:00', plannedEnd: '05:00', type: 'personal', recurrenceType: 'daily', constraintType: 'hard' },
@@ -410,6 +413,7 @@ class ErrorBoundary extends React.Component {
 }
 
 function App() {
+  const appName = "My Daily Rhythm"; // Define the app name here
   const [currentDate, setCurrentDate] = useState(new Date());
   const [activityLogs, setActivityLogs] = useState(() => {
     try {
@@ -468,6 +472,7 @@ function App() {
     }
   });
   const [editingSubTaskId, setEditingSubTaskId] = useState(null);
+  const [editingActualTimeLogId, setEditingActualTimeLogId] = useState(null); // New state for editing actual times
 
   const [currentPomodoroBlockId, setCurrentPomodoroBlockId] = useState(0);
   const [blockTimeConsumed, setBlockTimeConsumed] = useState(0);
@@ -621,6 +626,11 @@ function App() {
 
   // Reset remindersShownToday when currentDate changes
   useEffect(() => { remindersShownToday.current = new Set(); }, [currentDate]);
+
+  // Update document title
+  useEffect(() => {
+    document.title = appName;
+  }, [appName]);
 
   // --- Dynamic "Now" Indicator and Current Activity Highlighting ---
   useEffect(() => {
@@ -881,6 +891,33 @@ function App() {
         }
     }
   };
+
+  const handleActualTimeChange = (logId, timeType, value) => {
+    setActivityLogs(prevLogs => {
+      const dateKey = formatDateToYYYYMMDD(currentDate);
+      return prevLogs.map(log => {
+        if (log.id === logId && log.date === dateKey) {
+          const newLog = { ...log };
+          if (timeType === 'start') {
+            // Combine current date with new time for actualStart
+            const [hours, minutes] = value.split(':').map(Number);
+            const newDate = new Date(log.actualStart || currentDate); // Use existing date or current date
+            newDate.setHours(hours, minutes, 0, 0);
+            newLog.actualStart = newDate.toISOString();
+          } else if (timeType === 'end') {
+            // Combine current date with new time for actualEnd
+            const [hours, minutes] = value.split(':').map(Number);
+            const newDate = new Date(log.actualEnd || currentDate); // Use existing date or current date
+            newDate.setHours(hours, minutes, 0, 0);
+            newLog.actualEnd = newDate.toISOString();
+          }
+          return newLog;
+        }
+        return log;
+      });
+    });
+  };
+
 
   const getActualDuration = (log) => {
     if (log && log.actualStart && log.actualEnd) {
@@ -1460,6 +1497,10 @@ function App() {
 
   const handleMouseDown = useCallback((e, activityId, type = 'move') => {
     e.preventDefault();
+    // Stop propagation to prevent the parent's double-click handler from firing
+    // when clicking on an activity block.
+    e.stopPropagation(); 
+
     const activityElement = e.currentTarget;
     const rect = activityElement.getBoundingClientRect();
     const timelineRect = plannerTimelineRef.current.getBoundingClientRect();
@@ -1624,7 +1665,9 @@ function App() {
 
     showToast("Processing AI command...", "info", 5000);
 
+    // Provide the current daily schedule to the AI for better context
     const currentScheduleContext = dailyScheduleState.map(activity => ({
+        id: activity.id, // Include ID for AI to potentially reference
         activity: activity.activity,
         plannedStart: activity.plannedStart,
         plannedEnd: activity.plannedEnd,
@@ -1643,7 +1686,7 @@ function App() {
             Your response MUST be a JSON object with the following structure:
             {{
                 "action": "modify_activity" | "shift_activities" | "add_activity" | "delete_activity",
-                "activityName": "string" (Name or part of the activity to target),
+                "activityName": "string" (Name or part of the activity to target. Try to match closely to existing activity names if modifying/deleting.),
                 "targetDate": "string" (Date for the change, e.g., 'today', 'tomorrow', 'YYYY-MM-DD'. Infer 'today' if no date is given.),
                 "newPlannedStart": "string" (New start time in HH:MM format. REQUIRED for modify_activity and add_activity. If not provided by user, infer based on context or typical duration.),
                 "newPlannedEnd": "string" (New end time in HH:MM format. REQUIRED for modify_activity and add_activity. If not provided by user, infer based on context or typical duration (e.g., 30-60 mins).),
@@ -1653,7 +1696,7 @@ function App() {
             }}
 
             Key instructions for your parsing and suggestions:
-            1.  **Contextual Awareness**: Use the provided 'current daily schedule' to understand existing activities, their times, types, and constraint types.
+            1.  **Contextual Awareness**: Use the provided 'current daily schedule' to understand existing activities, their times, types, and constraint types. Use the 'id' from the context if you are sure about the activity.
             2.  **Hard Constraints**: Activities with "constraintType": "hard" are IMMOVABLE. If a requested change conflicts with a hard constraint, suggest an alternative that avoids the conflict or state that the change cannot be made without violating a hard constraint.
             3.  **Adjustable/Removable Activities**: If a change to one activity (e.g., extending its duration or shifting its start time) causes an overlap with an 'adjustable' or 'removable' activity, automatically shift or shrink the overlapping 'adjustable'/'removable' activities to accommodate the change, if possible. For 'removable' activities, suggest deleting them if no other adjustment is feasible.
             4.  **Inference for Missing Times/Durations**: For 'modify_activity' or 'add_activity', if \`newPlannedStart\` or \`newPlannedEnd\` are not explicitly provided by the user, you MUST infer them. If only one is given, infer the other based on a typical duration (e.g., 30-60 minutes for a new activity, or maintaining existing duration for modifications). If neither is given for a new activity, suggest a reasonable default like '09:00' to '09:30'.
@@ -2014,7 +2057,7 @@ function App() {
         <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
           {/* Header and Tabs */}
           <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-            <h1 className="text-3xl font-bold text-indigo-700">My Daily Rhythm <span className="text-xl text-gray-500">- v1.0.2</span></h1>
+            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.2</span></h1>
             <div className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('schedule')}
@@ -2364,7 +2407,7 @@ function App() {
                           scheduleViewMode === 'list' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                       }`}
                   >
-                      <BarChart2 className="inline-block mr-2" size={18} /> List View
+                      <BarChart2 className="inline-block mr-2" /> List View
                   </button>
               </div>
 
@@ -2376,6 +2419,8 @@ function App() {
                     ref={plannerTimelineRef}
                     className="relative w-full h-[720px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200 mb-6"
                     onDoubleClick={(e) => {
+                      // Check if the double-click occurred directly on the timeline (not on an activity block)
+                      // This is implicitly handled by stopping propagation in activity blocks.
                       const timelineRect = plannerTimelineRef.current.getBoundingClientRect();
                       const relativeY = e.clientY - timelineRect.top;
                       const minutesFromMidnight = (relativeY / timelineRect.clientHeight) * 1440;
@@ -2451,7 +2496,10 @@ function App() {
                             group // Add group class for hover effects
                             `}
                             style={{ top, height }}
-                            onDoubleClick={() => handleEditDailyActivity(activity)} // Double-click to edit
+                            onDoubleClick={(e) => { // Double-click to edit
+                                e.stopPropagation(); // Prevent parent's onDoubleClick from firing
+                                handleEditDailyActivity(activity);
+                            }}
                             onMouseDown={(e) => { // Integrated drag/resize logic
                                 const element = e.currentTarget;
                                 const rect = element.getBoundingClientRect();
@@ -2479,7 +2527,7 @@ function App() {
                         );
                     })}
                   </div>
-                  <p className="text-sm text-gray-500 mt-4 mb-6">Double-click an activity to edit details. Drag activities to adjust their times. Drag top/bottom edges to resize. Changes here only affect this specific day.</p>
+                  <p className="text-sm text-gray-500 mt-4 mb-6">Double-click an activity to edit details. Drag activities to adjust their times. Drag top/bottom edges to resize. Double-click on empty space to add a new activity. Changes here only affect this specific day.</p>
                 </>
               )}
 
@@ -2562,6 +2610,7 @@ function App() {
                                         )
                                       }
                                     `}
+                                    onDoubleClick={() => handleEditDailyActivity(activity)} // Double-click to edit the planned activity
                                   >
                                     <td className="py-3 px-4 text-sm font-medium text-gray-700">
                                       <span className={`${isPrayerBlock ? 'font-bold' : ''}`}>
@@ -2612,59 +2661,102 @@ function App() {
                                       {getPlannedDuration(activity.plannedStart, activity.plannedEnd, currentDate).toFixed(2)} hrs
                                     </td>
                                     <td className="py-3 px-4 text-sm text-gray-600">
-                                      {formatDateTime(log?.actualStart)}
+                                      {editingActualTimeLogId === log?.id ? (
+                                        <input
+                                          type="time"
+                                          value={log?.actualStart ? formatTo24HourTime(new Date(log.actualStart)) : ''}
+                                          onChange={(e) => handleActualTimeChange(log.id, 'start', e.target.value)}
+                                          className="w-28 p-1 border border-gray-300 rounded-md text-xs"
+                                        />
+                                      ) : (
+                                        <span onDoubleClick={() => log?.id && setEditingActualTimeLogId(log.id)}>
+                                          {formatDateTime(log?.actualStart)}
+                                        </span>
+                                      )}
                                     </td>
                                     <td className="py-3 px-4 text-sm text-gray-600">
-                                      {formatDateTime(log?.actualEnd)}
+                                      {editingActualTimeLogId === log?.id ? (
+                                        <input
+                                          type="time"
+                                          value={log?.actualEnd ? formatTo24HourTime(new Date(log.actualEnd)) : ''}
+                                          onChange={(e) => handleActualTimeChange(log.id, 'end', e.target.value)}
+                                          className="w-28 p-1 border border-gray-300 rounded-md text-xs"
+                                        />
+                                      ) : (
+                                        <span onDoubleClick={() => log?.id && setEditingActualTimeLogId(log.id)}>
+                                          {formatDateTime(log?.actualEnd)}
+                                        </span>
+                                      )}
                                     </td>
                                     <td className="py-3 px-4 text-sm text-gray-600">{actualDuration > 0 ? `${actualDuration.toFixed(2)} hrs` : '-'}</td>
                                     <td className="py-3 px-4 text-sm">
                                       <div className="flex space-x-2">
-                                        {!log?.actualStart && (
-                                          <button
-                                            onClick={() => logTime(activity.id, 'start')}
-                                            className="px-3 py-1 bg-blue-500 text-white rounded-md text-xs font-medium hover:bg-blue-600 transition-colors duration-200"
-                                            aria-label={`Start ${activity.activity}`}
-                                          >
-                                            <Play size={14} className="inline-block mr-1" /> Start
-                                          </button>
-                                        )}
-                                        {log?.actualStart && !log?.actualEnd && (
-                                          <button
-                                            onClick={() => logTime(activity.id, 'end')}
-                                            className="px-3 py-1 bg-purple-500 text-white rounded-md text-xs font-medium hover:bg-purple-600 transition-colors duration-200"
-                                            aria-label={`End ${activity.activity}`}
-                                          >
-                                            <StopCircle size={14} className="inline-block mr-1" /> End
-                                          </button>
-                                        )}
-                                        {log?.actualStart && (
-                                          <button
-                                            onClick={() => logTime(activity.id, 'reset')}
-                                            className="px-3 py-1 bg-red-500 text-white rounded-md text-xs font-medium hover:bg-red-600 transition-colors duration-200"
-                                            aria-label={`Reset ${activity.activity}`}
-                                          >
-                                            <RefreshCcw size={14} className="inline-block mr-1" /> Reset
-                                          </button>
-                                        )}
-                                        {(activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && (
-                                          assignedTaskInfo ? (
+                                        {editingActualTimeLogId === log?.id ? (
+                                          <>
                                             <button
-                                              onClick={() => handleUnassignTask(activity.id)}
+                                              onClick={() => setEditingActualTimeLogId(null)}
+                                              className="px-3 py-1 bg-indigo-600 text-white rounded-md text-xs font-medium hover:bg-indigo-700 transition-colors duration-200"
+                                              aria-label={`Save actual times for ${activity.activity}`}
+                                            >
+                                              <Save size={14} className="inline-block mr-1" /> Save
+                                            </button>
+                                            <button
+                                              onClick={() => setEditingActualTimeLogId(null)} // Simply exit edit mode
                                               className="px-3 py-1 bg-gray-500 text-white rounded-md text-xs font-medium hover:bg-gray-600 transition-colors duration-200"
-                                              aria-label={`Unassign task from ${activity.activity}`}
+                                              aria-label={`Cancel editing actual times for ${activity.activity}`}
                                             >
-                                              <Link size={14} className="inline-block mr-1 rotate-45" /> Unassign
+                                              <X size={14} className="inline-block mr-1" /> Cancel
                                             </button>
-                                          ) : (
-                                            <button
-                                              onClick={() => openAssignTaskModal({ date: currentDate, activityId: activity.id })}
-                                              className="px-3 py-1 bg-indigo-500 text-white rounded-md text-xs font-medium hover:bg-indigo-600 transition-colors duration-200"
-                                              aria-label={`Assign task to ${activity.activity}`}
-                                            >
-                                              <Link size={14} className="inline-block mr-1" /> Assign
-                                            </button>
-                                          )
+                                          </>
+                                        ) : (
+                                          <>
+                                            {!log?.actualStart && (
+                                              <button
+                                                onClick={() => logTime(activity.id, 'start')}
+                                                className="px-3 py-1 bg-blue-500 text-white rounded-md text-xs font-medium hover:bg-blue-600 transition-colors duration-200"
+                                                aria-label={`Start ${activity.activity}`}
+                                              >
+                                                <Play size={14} className="inline-block mr-1" /> Start
+                                              </button>
+                                            )}
+                                            {log?.actualStart && !log?.actualEnd && (
+                                              <button
+                                                onClick={() => logTime(activity.id, 'end')}
+                                                className="px-3 py-1 bg-purple-500 text-white rounded-md text-xs font-medium hover:bg-purple-600 transition-colors duration-200"
+                                                aria-label={`End ${activity.activity}`}
+                                              >
+                                                <StopCircle size={14} className="inline-block mr-1" /> End
+                                              </button>
+                                            )}
+                                            {log?.actualStart && (
+                                              <button
+                                                onClick={() => logTime(activity.id, 'reset')}
+                                                className="px-3 py-1 bg-red-500 text-white rounded-md text-xs font-medium hover:bg-red-600 transition-colors duration-200"
+                                                aria-label={`Reset ${activity.activity}`}
+                                              >
+                                                <RefreshCcw size={14} className="inline-block mr-1" /> Reset
+                                              </button>
+                                            )}
+                                            {(activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && (
+                                              assignedTaskInfo ? (
+                                                <button
+                                                  onClick={() => handleUnassignTask(activity.id)}
+                                                  className="px-3 py-1 bg-gray-500 text-white rounded-md text-xs font-medium hover:bg-gray-600 transition-colors duration-200"
+                                                  aria-label={`Unassign task from ${activity.activity}`}
+                                                >
+                                                  <Link size={14} className="inline-block mr-1 rotate-45" /> Unassign
+                                                </button>
+                                              ) : (
+                                                <button
+                                                  onClick={() => openAssignTaskModal({ date: currentDate, activityId: activity.id })}
+                                                  className="px-3 py-1 bg-indigo-500 text-white rounded-md text-xs font-medium hover:bg-indigo-600 transition-colors duration-200"
+                                                  aria-label={`Assign task to ${activity.activity}`}
+                                                >
+                                                  <Link size={14} className="inline-block mr-1" /> Assign
+                                                </button>
+                                              )
+                                            )}
+                                          </>
                                         )}
                                       </div>
                                     </td>
