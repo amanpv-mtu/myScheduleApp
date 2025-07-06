@@ -1,8 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit, Plus, Trash2, Save, X, Clock, CheckCircle, AlertCircle, PlayCircle, StopCircle, RefreshCcw, Link, Download, BellRing, Square, Info } from 'lucide-react';
-
-// Tailwind CSS is assumed to be available in the environment.
-
 // --- Helper Functions ---
 const formatTime = (seconds) => {
   const minutes = Math.floor(seconds / 60);
@@ -40,8 +37,8 @@ const formatDateToYYYYMMDD = (date) => {
 const getTimeOfDayGroup = (timeStr) => {
   const [hours, minutes] = timeStr.split(':').map(Number);
   if ((hours > 21 || (hours === 21 && minutes >= 55)) || (hours >= 0 && hours < 5)) return 'night';
-  if (hours >= 5 && hours < 9) return 'morning'; // Renamed from early-morning
-  if (hours >= 9 && hours < 19) return 'afternoon'; // Combined midday into afternoon
+  if (hours >= 5 && hours < 12) return 'morning';
+  if (hours >= 12 && hours < 19) return 'afternoon'; 
   if (hours >= 19 && (hours < 21 || (hours === 21 && minutes < 55))) return 'evening';
   return '';
 };
@@ -2451,24 +2448,33 @@ function App() {
                             className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
                             ${bgColor}
                             ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
+                            group // Add group class for hover effects
                             `}
                             style={{ top, height }}
-                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'move')}
-                            onDoubleClick={() => handleEditDailyActivity(activity)}
+                            onDoubleClick={() => handleEditDailyActivity(activity)} // Double-click to edit
+                            onMouseDown={(e) => { // Integrated drag/resize logic
+                                const element = e.currentTarget;
+                                const rect = element.getBoundingClientRect();
+                                const offsetY = e.clientY - rect.top; // Mouse Y relative to element top
+                                const clientHeight = rect.height;
+
+                                const resizeThreshold = 10; // Pixels from top/bottom edge to trigger resize
+
+                                if (offsetY < resizeThreshold) {
+                                    handleMouseDown(e, activity.id, 'top'); // Resizing from top
+                                } else if (offsetY > clientHeight - resizeThreshold) {
+                                    handleMouseDown(e, activity.id, 'bottom'); // Resizing from bottom
+                                } else {
+                                    handleMouseDown(e, activity.id, 'move'); // Moving the block
+                                }
+                            }}
                             title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
                         >
-                            {/* Top Resize Handle */}
-                            <div
-                            className="absolute top-0 left-0 right-0 h-2 -mt-1 cursor-ns-resize z-30"
-                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'top')}
-                            ></div>
                             <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
                             <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
-                            {/* Bottom Resize Handle */}
-                            <div
-                            className="absolute bottom-0 left-0 right-0 h-2 -mb-1 cursor-ns-resize z-30"
-                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'bottom')}
-                            ></div>
+                            {/* Visual indicators for resize areas (optional, but good for UX) */}
+                            <div className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity duration-100"></div>
+                            <div className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity duration-100"></div>
                         </div>
                         );
                     })}
@@ -2805,24 +2811,33 @@ function App() {
                       className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
                       ${bgColor}
                       ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
+                      group // Add group class for hover effects
                       `}
                       style={{ top, height }}
-                      onMouseDown={(e) => handleMouseDown(e, activity.id, 'move')} // This will now modify dailyCustomSchedules
-                      onDoubleClick={() => handleEditTemplateActivity(activity)}
+                      onDoubleClick={() => handleEditTemplateActivity(activity)} // Double-click to edit
+                      onMouseDown={(e) => { // Integrated drag/resize logic
+                          const element = e.currentTarget;
+                          const rect = element.getBoundingClientRect();
+                          const offsetY = e.clientY - rect.top; // Mouse Y relative to element top
+                          const clientHeight = rect.height;
+
+                          const resizeThreshold = 10; // Pixels from top/bottom edge to trigger resize
+
+                          if (offsetY < resizeThreshold) {
+                              handleMouseDown(e, activity.id, 'top'); // Resizing from top
+                          } else if (offsetY > clientHeight - resizeThreshold) {
+                              handleMouseDown(e, activity.id, 'bottom'); // Resizing from bottom
+                          } else {
+                              handleMouseDown(e, activity.id, 'move'); // Moving the block
+                          }
+                      }}
                       title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
                   >
-                      {/* Top Resize Handle */}
-                      <div
-                      className="absolute top-0 left-0 right-0 h-2 -mt-1 cursor-ns-resize z-30"
-                      onMouseDown={(e) => handleMouseDown(e, activity.id, 'top')} // This will now modify dailyCustomSchedules
-                      ></div>
                       <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
                       <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
-                      {/* Bottom Resize Handle */}
-                      <div
-                      className="absolute bottom-0 left-0 right-0 h-2 -mb-1 cursor-ns-resize z-30"
-                      onMouseDown={(e) => handleMouseDown(e, activity.id, 'bottom')} // This will now modify dailyCustomSchedules
-                      ></div>
+                      {/* Visual indicators for resize areas (optional, but good for UX) */}
+                      <div className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity duration-100"></div>
+                      <div className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity duration-100"></div>
                   </div>
                   );
               })}
@@ -3956,7 +3971,7 @@ const AssignTaskModal = ({ onClose, projectTasks, dailyScheduleState, currentDat
             <X size={18} className="inline-block mr-1" /> Cancel
           </button>
           <button
-            onCl            onClick={() => onAssign(selectedDate, selectedActivityId, selectedTask?.id, selectedSubtask?.id)}
+            onClick={() => onAssign(selectedDate, selectedActivityId, selectedTask?.id, selectedSubtask?.id)}
             disabled={!selectedTask || !selectedActivityId}
             className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
