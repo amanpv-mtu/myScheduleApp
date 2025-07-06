@@ -143,7 +143,22 @@ const initialDefaultSchedule = {
     { id: 'pre-sleep-jumuah', activity: 'Pre-Sleep Routine', plannedStart: '23:55', plannedEnd: '00:00', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
     { id: 'sleep-jumuah', activity: 'Lights Out / Sleep', plannedStart: '00:00', plannedEnd: '05:00', type: 'personal', recurrenceType: 'daily', constraintType: 'hard' },
   ],
-  fasting: [],
+  fasting: [
+    { id: 'suhoor', activity: 'Suhoor (Pre-dawn meal)', plannedStart: '04:00', plannedEnd: '04:30', type: 'personal', recurrenceType: 'none', constraintType: 'hard' },
+    { id: 'fajr-prep-fasting', activity: 'Hydrate, Wudu, Prepare for Fajr', plannedStart: '04:30', plannedEnd: '04:55', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'fajr-prayer-fasting', activity: 'Fajr Iqamah & Prayer', plannedStart: '04:55', plannedEnd: '05:15', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'quran-morning-fasting', activity: 'Quran Recitation & Reflection (Morning)', plannedStart: '05:15', plannedEnd: '05:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'light-work-fasting', activity: 'Light Work/Study', plannedStart: '09:00', plannedEnd: '12:00', type: 'academic', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'dhuhr-prayer-fasting', activity: 'Dhuhr Iqamah & Prayer', plannedStart: '13:00', plannedEnd: '13:20', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'rest-fasting', activity: 'Rest/Nap', plannedStart: '14:00', plannedEnd: '15:00', type: 'personal', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'asr-prayer-fasting', activity: 'Asr Iqamah & Prayer', plannedStart: '17:00', plannedEnd: '17:20', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'iftar-prep', activity: 'Iftar Preparation', plannedStart: '19:00', plannedEnd: '19:30', type: 'personal', recurrenceType: 'none', constraintType: 'adjustable' },
+    { id: 'iftar', activity: 'Iftar (Breaking fast)', plannedStart: '19:30', plannedEnd: '20:00', type: 'personal', recurrenceType: 'none', constraintType: 'hard' },
+    { id: 'maghrib-prayer-fasting', activity: 'Maghrib Iqamah & Prayer', plannedStart: '20:00', plannedEnd: '20:20', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'taraweeh-fasting', activity: 'Taraweeh/Evening Prayers', plannedStart: '21:30', plannedEnd: '22:30', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
+    { id: 'isha-prayer-fasting', activity: 'Isha Iqamah & Prayer', plannedStart: '22:30', plannedEnd: '22:50', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'sleep-fasting', activity: 'Sleep', plannedStart: '23:00', plannedEnd: '04:00', type: 'personal', recurrenceType: 'daily', constraintType: 'hard' },
+  ],
   overrides: {
     soccerDays: [
       { id: 'soccer-game', activity: 'Soccer Game (including travel, warm-up, cool-down, shower)', plannedStart: '20:00', plannedEnd: '22:00', type: 'physical', recurrenceType: 'weekly', recurrenceDays: [3, 6], constraintType: 'hard' },
@@ -425,7 +440,7 @@ function App() {
   const [reportDate, setReportDate] = useState(new Date());
   const intervalRef = useRef(null);
   // Changed audio source to a more common format
-  const audioRef = useRef(new Audio('https://www.soundjay.com/misc/bell-ringing-01.mp3'));
+  const audioRef = useRef(new Audio('../public/bell-ringing-02.mp3'));
   const [currentActivityId, setCurrentActivityId] = useState(null);
 
   const [dailyScheduleState, setDailyScheduleState] = useState([]); // This will be the effective schedule for the current day
@@ -1068,9 +1083,9 @@ function App() {
   };
 
   // --- Daily Activity Handlers (for Schedule tab) ---
-  const handleAddDailyActivity = () => {
+  const handleAddDailyActivity = (initialStart = '09:00', initialEnd = '09:30') => {
     setEditingActivity({
-      id: `new-${Date.now()}`, activity: '', plannedStart: formatTo24HourTime(new Date()), plannedEnd: formatTo24HourTime(new Date(new Date().getTime() + 60 * 60 * 1000)), // Default to current time + 1 hour
+      id: `new-${Date.now()}`, activity: '', plannedStart: initialStart, plannedEnd: initialEnd,
       type: 'personal', recurrenceType: 'none', recurrenceDays: [], constraintType: 'adjustable', isNew: true,
     });
     setIsEditingDailySchedule(true); // This is a daily edit
@@ -1585,7 +1600,7 @@ function App() {
         return;
     }
 
-    showToast("Processing AI command...", "info");
+    showToast("Processing AI command...", "info", 5000);
 
     const chatHistory = [];
     chatHistory.push({ role: "user", parts: [{ text: `Parse this schedule modification request into JSON: "${userInput}". Be precise with activity names and times. If a time is not specified, do not include it. Infer 'today' if no date is given. If duration is changed, calculate newPlannedEnd based on newPlannedStart. If an activity name is not clear, suggest options. Use the current date as ${formatDateToYYYYMMDD(currentDate)} for 'today'.` }] });
@@ -1892,7 +1907,7 @@ function App() {
         <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
           {/* Header and Tabs */}
           <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-            <h1 className="text-3xl font-bold text-indigo-700">My Daily Rhythm</h1>
+            <h1 className="text-3xl font-bold text-indigo-700">My Daily Rhythm <span className="text-xl text-gray-500">- v1.0</span></h1>
             <div className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('schedule')}
@@ -2219,7 +2234,7 @@ function App() {
 
               {/* Add New Activity Button for Daily Schedule */}
               <button
-                  onClick={handleAddDailyActivity}
+                  onClick={() => handleAddDailyActivity()} // No initial times here, they come from double-click
                   className="mb-4 px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center self-start"
                   aria-label="Add New Activity to Daily Plan"
               >
@@ -2260,22 +2275,10 @@ function App() {
                       const snappedMinutes = Math.round(minutesFromMidnight / 15) * 15; // Snap to nearest 15 minutes
 
                       const newActivityStart = minutesToTime(snappedMinutes);
-                      const newActivityEndMinutes = (snappedMinutes + 60) % 1440; // Default 1 hour duration
+                      const newActivityEndMinutes = (snappedMinutes + 30) % 1440; // Default 30 minutes duration
                       const newActivityEnd = minutesToTime(newActivityEndMinutes);
 
-                      setEditingActivity({
-                        id: `new-${Date.now()}`,
-                        activity: 'New Activity',
-                        plannedStart: newActivityStart,
-                        plannedEnd: newActivityEnd,
-                        type: 'personal',
-                        recurrenceType: 'none',
-                        recurrenceDays: [],
-                        constraintType: 'adjustable',
-                        isNew: true,
-                      });
-                      setIsEditingDailySchedule(true); // Always editing the daily custom schedule
-                      setIsActivityModalOpen(true);
+                      handleAddDailyActivity(newActivityStart, newActivityEnd);
                     }}
                   >
                     {/* Time Grid Lines and Labels */}
