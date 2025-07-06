@@ -414,6 +414,7 @@ class ErrorBoundary extends React.Component {
 
 function App() {
   const appName = "My Daily Rhythm"; // Define the app name here
+  
   const [currentDate, setCurrentDate] = useState(new Date());
   const [activityLogs, setActivityLogs] = useState(() => {
     try {
@@ -436,12 +437,18 @@ function App() {
   const [appSettings, setAppSettings] = useState(() => {
     try {
       const savedSettings = localStorage.getItem('appSettings');
-      return savedSettings ? JSON.parse(savedSettings) : { geminiApiKey: '', location: { city: '', country: '' } , iqamahUrl: 'https://time.my-masjid.com/timingscreen/0b7437f8-2ee4-407a-83a3-f23990ca3f0a'};
+      return savedSettings ? JSON.parse(savedSettings) : { geminiApiKey: '', location: { city: '', country: '' } , iqamahUrl: 'https://time.my-masjid.com/timingscreen/0b7437f8-2ee4-407a-83a3-f23990ca3f0a', googleCalendarConnected: false, googleClientId: '', googleApiKey: '' };
     } catch (error) {
       console.error("Failed to parse appSettings from localStorage:", error);
-      return { geminiApiKey: '', location: { city: '', country: '' } , iqamahUrl: 'https://time.my-masjid.com/timingscreen/0b7437f8-2ee4-407a-83a3-f23990ca3f0a'};
+      return { geminiApiKey: '', location: { city: '', country: '' } , iqamahUrl: 'https://time.my-masjid.com/timingscreen/0b7437f8-2ee4-407a-83a3-f23990ca3f0a', googleCalendarConnected: false, googleClientId: '', googleApiKey: '' };
     }
   });
+  
+// NEW STATES FOR GOOGLE CALENDAR
+  const [isConnectingGCal, setIsConnectingGCal] = useState(false);
+  const [isImportingGCal, setIsImportingGCal] = useState(false);
+  const [isExportingGCal, setIsExportingGCal] = useState(false);
+
   
   const [pomodoroTimer, setPomodoroTimer] = useState({
     running: false,
@@ -617,7 +624,10 @@ function App() {
       };
     }
   });
-
+  // NEW REFS FOR GOOGLE CALENDAR
+  const gapiLoaded = useRef(false);
+  const gsiLoaded = useRef(false);
+  const tokenClientRef = useRef(null); // Ref to store the tokenClient instance
 
   // --- Effects for Local Storage ---
   useEffect(() => { localStorage.setItem('activityLogs', JSON.stringify(activityLogs)); }, [activityLogs]);
@@ -2095,6 +2105,218 @@ const handleFetchIqamahTimes = useCallback(async () => {
 
   // No auto-fetch on load for AI-based Iqamah times, user explicitly clicks.
 
+  // --- Google Calendar Integration Functions (using gapi) ---
+  // Load gapi and gsi libraries
+  useEffect(() => {
+    const loadGapi = () => {
+      if (window.gapi && !gapiLoaded.current) {
+        window.gapi.load('client:auth2', () => {
+          window.gapi.client.init({
+            apiKey: appSettings.googleApiKey, // Optional, but good to include if present
+            clientId: appSettings.googleClientId,
+            discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'],
+            scope: 'https://www.googleapis.com/auth/calendar.events', // Scope for reading/writing events
+          }).then(() => {
+            gapiLoaded.current = true;
+            console.log('Google API client loaded and initialized.');
+            // Check initial sign-in status if needed, though GIS handles primary auth
+          }).catch(error => {
+            console.error('Error initializing gapi client:', error);
+            showToast('Failed to initialize Google API client. Check API Key/Client ID.', 'error', 7000);
+          });
+        });
+      }
+    };
+
+    const loadGsi = () => {
+      if (window.google && window.google.accounts && window.google.accounts.oauth2 && !gsiLoaded.current) {
+        tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+          client_id: appSettings.googleClientId,
+          scope: 'https://www.googleapis.com/auth/calendar.events',
+          callback: (tokenResponse) => {
+            if (tokenResponse && tokenResponse.access_token) {
+              window.gapi.client.setToken(tokenResponse); // Set the token for gapi.client
+              setAppSettings(prev => ({ ...prev, googleCalendarConnected: true }));
+              showToast('Google Calendar connected successfully!', 'success');
+              console.log('Google Calendar connected. Access Token:', tokenResponse.access_token);
+            } else {
+              setAppSettings(prev => ({ ...prev, googleCalendarConnected: false }));
+              showToast('Failed to connect Google Calendar. Please try again.', 'error');
+              console.error('Failed to connect Google Calendar:', tokenResponse);
+            }
+            setIsConnectingGCal(false);
+          },
+          error_callback: (error) => {
+            console.error('GSI Error:', error);
+            showToast('Google Calendar connection failed. See console for details.', 'error', 7000);
+            setIsConnectingGCal(false);
+          }
+        });
+        gsiLoaded.current = true;
+        console.log('Google Identity Services client initialized.');
+      }
+    };
+
+    // Check if gapi and gsi are already available, otherwise wait for them
+    if (window.gapi) loadGapi();
+    else window.addEventListener('load', loadGapi);
+
+    if (window.google && window.google.accounts && window.google.accounts.oauth2) loadGsi();
+    else window.addEventListener('load', loadGsi);
+
+    return () => {
+      // Cleanup event listeners if necessary
+      window.removeEventListener('load', loadGapi);
+      window.removeEventListener('load', loadGsi);
+    };
+  }, [appSettings.googleClientId, appSettings.googleApiKey, setAppSettings, showToast]);
+
+
+  const connectGoogleCalendar = useCallback(() => {
+    if (!appSettings.googleClientId) {
+      showToast('Please enter your Google Client ID in settings.', 'error');
+      return;
+    }
+    if (!gapiLoaded.current || !gsiLoaded.current || !tokenClientRef.current) {
+      showToast('Google API libraries not fully loaded yet. Please wait a moment and try again.', 'info', 5000);
+      console.log('GAPI Loaded:', gapiLoaded.current, 'GSI Loaded:', gsiLoaded.current, 'Token Client:', tokenClientRef.current);
+      return;
+    }
+
+    setIsConnectingGCal(true);
+    try {
+      tokenClientRef.current.requestAccessToken(); // Initiate the OAuth flow
+    } catch (error) {
+      console.error('Error requesting access token:', error);
+      showToast('Failed to initiate Google Calendar connection. See console for details.', 'error', 7000);
+      setIsConnectingGCal(false);
+    }
+  }, [appSettings.googleClientId, showToast]);
+
+  const fetchGoogleCalendarMeetings = useCallback(async () => {
+    if (!appSettings.googleCalendarConnected) {
+      showToast('Please connect Google Calendar first.', 'error');
+      return;
+    }
+    if (!gapiLoaded.current || !window.gapi.client.calendar) {
+      showToast('Google Calendar API not ready. Please try again.', 'error', 5000);
+      return;
+    }
+
+    setIsImportingGCal(true);
+    showToast('Importing meetings from Google Calendar...', 'info', 5000);
+
+    try {
+      const now = new Date();
+      const oneMonthLater = new Date();
+      oneMonthLater.setMonth(oneMonthLater.getMonth() + 1);
+
+      const response = await window.gapi.client.calendar.events.list({
+        'calendarId': 'primary', // 'primary' usually refers to the user's main calendar
+        'timeMin': now.toISOString(),
+        'timeMax': oneMonthLater.toISOString(), // Fetch events for the next month
+        'showDeleted': false,
+        'singleEvents': true,
+        'orderBy': 'startTime',
+      });
+
+      const events = response.result.items;
+      console.log('Fetched Google Calendar Events:', events);
+
+      if (events.length > 0) {
+        const dateKey = formatDateToYYYYMMDD(currentDate);
+        setDailyCustomSchedules(prev => {
+          let currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] :
+                                   generateScheduleForDate(currentDate, null, true, plannerSchedule, prev, fastingDates, iqamahConfig);
+
+          events.forEach(event => {
+            const eventStart = event.start.dateTime || event.start.date; // Use dateTime for specific time, date for all-day
+            const eventEnd = event.end.dateTime || event.end.date;
+
+            if (eventStart && eventEnd) {
+              const startDate = new Date(eventStart);
+              const endDate = new Date(eventEnd);
+
+              // Only import events for the current displayed day
+              if (formatDateToYYYYMMDD(startDate) === formatDateToYYYYMMDD(currentDate)) {
+                const newActivity = {
+                  id: `gcal-${event.id}`, // Use Google Event ID for unique ID
+                  activity: event.summary || 'Google Calendar Event',
+                  plannedStart: formatTo24HourTime(startDate),
+                  plannedEnd: formatTo24HourTime(endDate),
+                  type: 'work', // Assume meetings are 'work' type, user can change
+                  recurrenceType: 'none', // Imported as one-time events
+                  recurrenceDays: [],
+                  constraintType: 'hard', // Meetings are usually hard constraints
+                  isGoogleCalendarEvent: true, // Mark as imported from GCal
+                };
+
+                // Check if event already exists to avoid duplicates
+                if (!currentDaySchedule.some(act => act.id === newActivity.id)) {
+                  currentDaySchedule.push(newActivity);
+                }
+              }
+            }
+          });
+          // Sort after adding new events
+          currentDaySchedule.sort((a, b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart));
+          return { ...prev, [dateKey]: currentDaySchedule };
+        });
+        showToast(`Successfully imported ${events.length} meetings from Google Calendar!`, 'success');
+      } else {
+        showToast('No upcoming meetings found in Google Calendar for the next month.', 'info');
+      }
+    } catch (error) {
+      console.error('Error fetching Google Calendar events:', error);
+      showToast(`Failed to import meetings: ${error.message}. Please ensure Calendar API is enabled.`, 'error', 7000);
+    } finally {
+      setIsImportingGCal(false);
+    }
+  }, [appSettings.googleCalendarConnected, currentDate, setDailyCustomSchedules, showToast, plannerSchedule, fastingDates, iqamahConfig]);
+
+  const addActivityToGoogleCalendar = useCallback(async (activity) => {
+    if (!appSettings.googleCalendarConnected) {
+      showToast('Please connect Google Calendar first.', 'error');
+      return;
+    }
+    if (!gapiLoaded.current || !window.gapi.client.calendar) {
+      showToast('Google Calendar API not ready. Please try again.', 'error', 5000);
+      return;
+    }
+
+    setIsExportingGCal(true);
+    showToast(`Adding "${activity.activity}" to Google Calendar...`, 'info', 5000);
+
+    try {
+      const event = {
+        'summary': activity.activity,
+        'start': {
+          'dateTime': `${formatDateToYYYYMMDD(currentDate)}T${activity.plannedStart}:00`,
+          'timeZone': Intl.DateTimeFormat().resolvedOptions().timeZone, // Use local timezone
+        },
+        'end': {
+          'dateTime': `${formatDateToYYYYMMDD(currentDate)}T${activity.plannedEnd}:00`,
+          'timeZone': Intl.DateTimeFormat().resolvedOptions().timeZone,
+        },
+        'description': subTaskDetails[activity.id] || '',
+        // 'visibility': 'private' // Or 'public', 'confidential'
+      };
+
+      const request = await window.gapi.client.calendar.events.insert({
+        'calendarId': 'primary',
+        'resource': event,
+      });
+
+      console.log('Event created:', request.result);
+      showToast(`Activity "${activity.activity}" added to Google Calendar!`, 'success');
+    } catch (error) {
+      console.error('Error adding event to Google Calendar:', error);
+      showToast(`Failed to add "${activity.activity}" to Google Calendar: ${error.message}.`, 'error', 7000);
+    } finally {
+      setIsExportingGCal(false);
+    }
+  }, [appSettings.googleCalendarConnected, currentDate, subTaskDetails, showToast]);
+
 
   return (
     <ErrorBoundary>
@@ -2102,7 +2324,7 @@ const handleFetchIqamahTimes = useCallback(async () => {
         <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
           {/* Header and Tabs */}
           <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.6</span></h1>
+            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.10</span></h1>
             <div className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('schedule')}
@@ -2189,6 +2411,23 @@ const handleFetchIqamahTimes = useCallback(async () => {
                       aria-label="Apply selected template"
                   >
                       Apply Template
+                  </button>
+                {/* NEW: Import Google Calendar Meetings Button */}
+                  <button
+                      onClick={fetchGoogleCalendarMeetings}
+                      disabled={!appSettings.googleCalendarConnected || isImportingGCal}
+                      className="px-4 py-2 bg-purple-500 text-white rounded-md shadow-md hover:bg-purple-600 transition-colors duration-200 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                      aria-label="Import Google Calendar Meetings"
+                  >
+                      {isImportingGCal ? (
+                        <>
+                          <span className="animate-spin mr-2">🔄</span> Importing...
+                        </>
+                      ) : (
+                        <>
+                          <Download size={18} className="inline-block mr-2" /> Import GCal
+                        </>
+                      )}
                   </button>
               </div>
 
@@ -2549,7 +2788,7 @@ const handleFetchIqamahTimes = useCallback(async () => {
                             ${activity.id === currentActivityId ? 'border-l-4 border-indigo-600' : 'border-l-2 border-transparent'}
                             ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
                             group // Add group class for hover effects
-                            border-3 border-gray-700 hover:shadow-md transition-shadow duration-150
+                            border-3 border-gray-700 ring-1 ring-gray-200 hover:ring-indigo-400 hover:shadow-md transition-all duration-150
                             `}
                             style={{ top, height }}
                             onDoubleClick={(e) => { // Double-click to edit
@@ -2810,6 +3049,25 @@ const handleFetchIqamahTimes = useCallback(async () => {
                                                 </button>
                                               )
                                             )}
+
+                                            {/* NEW: Actions Dropdown for Google Calendar */}
+                                            <div className="relative group">
+                                              <button
+                                                className="px-3 py-1 bg-gray-400 text-white rounded-md text-xs font-medium hover:bg-gray-500 transition-colors duration-200"
+                                                aria-label="More actions"
+                                              >
+                                                Actions <ChevronRight size={12} className="inline-block ml-1 transform rotate-90" />
+                                              </button>
+                                              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-20 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 origin-top-right">
+                                                <button
+                                                  onClick={() => addActivityToGoogleCalendar(activity)}
+                                                  disabled={!appSettings.googleCalendarConnected || isExportingGCal}
+                                                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                  {isExportingGCal ? 'Adding...' : 'Add to Google Calendar'}
+                                                </button>
+                                              </div>
+                                            </div>
                                           </>
                                         )}
                                       </div>
@@ -3105,33 +3363,31 @@ const handleFetchIqamahTimes = useCallback(async () => {
                               <div className="flex space-x-2">
                                 <button
                                   onClick={() => handleEditTask(task)}
-                                  className="p-2 bg-blue-500 text-white rounded-md text-xs hover:bg-blue-600 transition-colors duration-200"
+                                  className="px-3 py-1 bg-blue-500 text-white rounded-md text-xs font-medium hover:bg-blue-600 transition-colors duration-200"
                                   aria-label={`Edit ${task.name}`}
                                 >
-                                  <Edit size={16} />
+                                  <Edit size={14} className="inline-block mr-1" /> Edit
+                                </button>
+                                <button
+                                    onClick={() => handleSaveTask({...task, actualCompletionDate: formatDateToYYYYMMDD(new Date()), status: 'completed'})}
+                                    className="px-3 py-1 bg-green-500 text-white rounded-md text-xs font-medium hover:bg-green-600 transition-colors duration-200"
+                                    aria-label={`Mark ${task.name} as complete`}
+                                >
+                                    <CheckCircle size={14} className="inline-block mr-1" /> Complete
+                                </button>
+                                <button
+                                  onClick={() => openAssignTaskModal(null, { taskId: task.id, subtaskId: null })}
+                                  className="px-3 py-1 bg-indigo-500 text-white rounded-md text-xs font-medium hover:bg-indigo-600 transition-colors duration-200"
+                                  aria-label={`Assign ${task.name} to schedule`}
+                                >
+                                  <Link size={14} className="inline-block mr-1" /> Assign
                                 </button>
                                 <button
                                   onClick={() => handleDeleteTask(task.id)}
-                                  className="p-2 bg-red-500 text-white rounded-md text-xs hover:bg-red-600 transition-colors duration-200"
+                                  className="px-3 py-1 bg-red-500 text-white rounded-md text-xs font-medium hover:bg-red-600 transition-colors duration-200"
                                   aria-label={`Delete ${task.name}`}
                                 >
-                                  <Trash2 size={16} />
-                                </button>
-                                {!task.actualCompletionDate && taskStatus !== 'completed' && (
-                                    <button
-                                        onClick={() => handleSaveTask({...task, actualCompletionDate: formatDateToYYYYMMDD(new Date()), status: 'completed'})}
-                                        className="p-2 bg-green-500 text-white rounded-md text-xs hover:bg-green-600 transition-colors duration-200"
-                                        aria-label={`Mark ${task.name} as complete`}
-                                    >
-                                        <CheckCircle size={16} />
-                                    </button>
-                                )}
-                                <button
-                                  onClick={() => openAssignTaskModal(null, { taskId: task.id, subtaskId: null })}
-                                  className="p-2 bg-indigo-500 text-white rounded-md text-xs hover:bg-indigo-600 transition-colors duration-200"
-                                  aria-label={`Assign ${task.name} to schedule`}
-                                >
-                                  <Link size={16} />
+                                  <Trash2 size={14} className="inline-block mr-1" /> Delete
                                 </button>
                               </div>
                             </td>
@@ -3376,6 +3632,64 @@ const handleFetchIqamahTimes = useCallback(async () => {
                     Get your key from <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Google AI Studio</a>.
                   </p>
                 </div>
+              </div>
+
+              {/* Google Calendar Integration */}
+              <div className="bg-indigo-50 rounded-lg p-4 mb-6 shadow-inner">
+                <h3 className="text-xl font-semibold text-indigo-700 mb-4">Google Calendar Integration</h3>
+                <p className="text-sm text-gray-700 mb-4">
+                  Connect your Google Calendar to import meetings and export activities.
+                  <br/>
+                  <span className="font-bold text-red-600">Note:</span> Full integration requires a Google Cloud Project and OAuth setup.
+                </p>
+                <div className="space-y-4 mb-4">
+                  <div>
+                    <label htmlFor="googleClientId" className="block text-sm font-medium text-gray-700">Google Client ID</label>
+                    <input
+                      type="text"
+                      id="googleClientId"
+                      value={appSettings.googleClientId}
+                      onChange={(e) => setAppSettings(prev => ({ ...prev, googleClientId: e.target.value }))}
+                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                      placeholder="Enter your Google Client ID"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Found in Google Cloud Console Credentials (OAuth 2.0 Client IDs).</p>
+                  </div>
+                  {/* Removed Google Client Secret input field for security */}
+                  <div>
+                    <label htmlFor="googleApiKey" className="block text-sm font-medium text-gray-700">Google API Key (Optional)</label>
+                    <input
+                      type="password"
+                      id="googleApiKey"
+                      value={appSettings.googleApiKey}
+                      onChange={(e) => setAppSettings(prev => ({ ...prev, googleApiKey: e.target.value }))}
+                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                      placeholder="Enter your Google API Key (if needed for other services)"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Only required for certain Google APIs, not typically for OAuth flow itself.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={connectGoogleCalendar}
+                  className={`px-4 py-2 rounded-md shadow-md transition-colors duration-200 flex items-center
+                    ${appSettings.googleCalendarConnected ? 'bg-green-500 text-white cursor-not-allowed' : 'bg-blue-500 text-white hover:bg-blue-600'}
+                  `}
+                  disabled={appSettings.googleCalendarConnected || !appSettings.googleClientId || isConnectingGCal}
+                >
+                  {isConnectingGCal ? (
+                    <>
+                      <span className="animate-spin mr-2">⚙️</span> Connecting...
+                    </>
+                  ) : appSettings.googleCalendarConnected ? (
+                    <>
+                      <CheckCircle size={20} className="mr-2" /> Connected
+                    </>
+                  ) : (
+                    <>
+                      <Link size={20} className="mr-2" /> Connect Google Calendar
+                    </>
+                  )}
+                </button>
               </div>
 
               {/* Iqamah Times Settings */}
