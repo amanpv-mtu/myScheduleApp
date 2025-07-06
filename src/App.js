@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit, Plus, Trash2, Save, X, Clock, CheckCircle, AlertCircle, PlayCircle, StopCircle, RefreshCcw, Link, Download, BellRing, Square, Info } from 'lucide-react';
+import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit, Plus, Trash2, Save, X, Clock, CheckCircle, AlertCircle, PlayCircle, StopCircle, RefreshCcw, Link, Download, BellRing, Square, Info, Volume2, VolumeX } from 'lucide-react';
 // --- Helper Functions ---
 const formatTime = (seconds) => {
   const minutes = Math.floor(seconds / 60);
@@ -41,7 +41,7 @@ const getTimeOfDayGroup = (timeStr) => {
   const [hours, minutes] = timeStr.split(':').map(Number);
   if ((hours > 21 || (hours === 21 && minutes >= 55)) || (hours >= 0 && hours < 5)) return 'night';
   if (hours >= 5 && hours < 12) return 'morning';
-  if (hours >= 12 && hours < 19) return 'afternoon'; 
+  if (hours >= 12 && hours < 19) return 'afternoon';
   if (hours >= 19 && (hours < 21 || (hours === 21 && minutes < 55))) return 'evening';
   return '';
 };
@@ -169,7 +169,7 @@ const initialDefaultSchedule = {
 const generateScheduleForDate = (date, templateType, considerFasting, plannerSchedule, dailyCustomSchedules, fastingDates, iqamahConfig) => {
     const dateKey = formatDateToYYYYMMDD(date);
     const isFastingDay = !!fastingDates[dateKey];
-    
+
     let initialActivities = [];
 
     // Prioritize daily custom schedule if it exists
@@ -452,6 +452,7 @@ function App() {
     nextMode: null,
     nextTimeLeft: 0,
     linkedActivityId: null,
+    initialTime: pomodoroSettings.work * 60, // Store initial time for percentage calculation
   });
   const [activeTab, setActiveTab] = useState('schedule');
   const [reportDate, setReportDate] = useState(new Date());
@@ -548,7 +549,8 @@ function App() {
   const [reminderActivity, setReminderActivity] = useState(null);
   const remindersShownToday = useRef(new Set());
 
-  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(true); // Default to true
+  const [isMuted, setIsMuted] = useState(false); // New state for mute toggle
 
   const [fastingDates, setFastingDates] = useState(() => {
     try {
@@ -679,7 +681,7 @@ function App() {
           setShowReminderModal(true);
           remindersShownToday.current.add(activityKey);
 
-          if (audioEnabled) {
+          if (audioEnabled && !isMuted) { // Check isMuted
             audioRef.current.play();
           }
 
@@ -705,7 +707,7 @@ function App() {
 
     const reminderInterval = setInterval(checkReminders, 30 * 1000); // Check every 30 seconds
     return () => clearInterval(reminderInterval);
-  }, [dailyScheduleState, currentDate, pomodoroSettings.reminderTime, audioEnabled]);
+  }, [dailyScheduleState, currentDate, pomodoroSettings.reminderTime, audioEnabled, isMuted]);
 
 
   // --- Pomodoro Timer Logic ---
@@ -716,7 +718,7 @@ function App() {
           if (prev.timeLeft > 0) {
             return { ...prev, timeLeft: prev.timeLeft - 1 };
           } else {
-            if (audioEnabled) {
+            if (audioEnabled && !isMuted) { // Check isMuted
               audioRef.current.play();
             }
             clearInterval(intervalRef.current);
@@ -753,11 +755,11 @@ function App() {
 
             if (prev.linkedActivityId) {
                 if (remainingBlockTime <= 0) {
-                    return { ...prev, running: false, timeLeft: 0, showAlert: true, alertMessage: "Pomodoro session for this block has ended!", nextMode: null, nextTimeLeft: 0, linkedActivityId: null };
+                    return { ...prev, running: false, timeLeft: 0, showAlert: true, alertMessage: "Pomodoro session for this block has ended!", nextMode: null, nextTimeLeft: 0, linkedActivityId: null, initialTime: 0 };
                 } else if (nextTimeLeft > remainingBlockTime) {
                     nextTimeLeft = remainingBlockTime;
                     if (nextTimeLeft <= 0) {
-                        return { ...prev, running: false, timeLeft: 0, showAlert: true, alertMessage: "Pomodoro session for this block has ended!", nextMode: null, nextTimeLeft: 0, linkedActivityId: null };
+                        return { ...prev, running: false, timeLeft: 0, showAlert: true, alertMessage: "Pomodoro session for this block has ended!", nextMode: null, nextTimeLeft: 0, linkedActivityId: null, initialTime: 0 };
                     }
                 }
             }
@@ -771,6 +773,7 @@ function App() {
                 nextTimeLeft: nextTimeLeft,
                 pomodorosCompleted: nextPomodorosCompleted,
                 blockTimeConsumed: newBlockTimeConsumed,
+                initialTime: nextTimeLeft, // Update initialTime for the next mode
             };
           }
         });
@@ -780,7 +783,7 @@ function App() {
     }
 
     return () => clearInterval(intervalRef.current);
-  }, [pomodoroTimer.running, pomodoroTimer.timeLeft, pomodoroTimer.mode, pomodoroSettings, currentPomodoroBlockId, dailyScheduleState, audioEnabled, pomodoroTimer.blockTimeConsumed, pomodoroTimer.linkedActivityId]);
+  }, [pomodoroTimer.running, pomodoroTimer.timeLeft, pomodoroTimer.mode, pomodoroSettings, currentPomodoroBlockId, dailyScheduleState, audioEnabled, isMuted, pomodoroTimer.blockTimeConsumed, pomodoroTimer.linkedActivityId]);
 
 
   const startPomodoroSession = useCallback((mode, duration, linkedActivityId = null) => {
@@ -795,6 +798,7 @@ function App() {
       nextMode: null,
       nextTimeLeft: 0,
       linkedActivityId: linkedActivityId,
+      initialTime: duration * 60, // Set initial time here
     });
     if (linkedActivityId) {
         setCurrentPomodoroBlockId(linkedActivityId);
@@ -812,6 +816,7 @@ function App() {
     setPomodoroTimer({
       running: false, mode: 'work', timeLeft: pomodoroSettings.work * 60, pomodorosCompleted: 0,
       showAlert: false, alertMessage: '', nextMode: null, nextTimeLeft: 0, linkedActivityId: null,
+      initialTime: pomodoroSettings.work * 60,
     });
     setCurrentPomodoroBlockId(null);
     setBlockTimeConsumed(0);
@@ -820,7 +825,7 @@ function App() {
   const continuePomodoro = () => {
     setPomodoroTimer(prev => ({
       ...prev, running: true, mode: prev.nextMode, timeLeft: prev.nextTimeLeft,
-      showAlert: false, alertMode: null, nextTimeLeft: 0,
+      showAlert: false, alertMode: null, nextTimeLeft: 0, initialTime: prev.nextTimeLeft,
     }));
   };
 
@@ -829,7 +834,7 @@ function App() {
   const skipBreak = () => {
     setPomodoroTimer(prev => ({
       ...prev, running: true, mode: 'work', timeLeft: pomodoroSettings.work * 60,
-      showAlert: false, alertMode: null, nextTimeLeft: 0,
+      showAlert: false, alertMode: null, nextTimeLeft: 0, initialTime: pomodoroSettings.work * 60,
     }));
   };
 
@@ -882,7 +887,7 @@ function App() {
         resetPomodoro(); // Reset pomodoro if starting a non-academic activity
       }
     } else if (type === 'end') {
-        setPomodoroTimer(prev => ({ ...prev, running: false, linkedActivityId: null }));
+        setPomodoroTimer(prev => ({ ...prev, running: false, linkedActivityId: null, initialTime: 0 }));
         setCurrentPomodoroBlockId(null);
         setBlockTimeConsumed(0);
     } else if (type === 'reset') {
@@ -1490,16 +1495,15 @@ function App() {
     reader.readAsText(file);
   };
 
-  const handleEnableAudio = () => {
-    setAudioEnabled(true);
-    audioRef.current.play().catch(e => console.log("Audio play failed on initial attempt (expected if no sound):", e));
+  const toggleMute = () => {
+    setIsMuted(prev => !prev);
   };
 
   const handleMouseDown = useCallback((e, activityId, type = 'move') => {
     e.preventDefault();
     // Stop propagation to prevent the parent's double-click handler from firing
     // when clicking on an activity block.
-    e.stopPropagation(); 
+    e.stopPropagation();
 
     const activityElement = e.currentTarget;
     const rect = activityElement.getBoundingClientRect();
@@ -1538,6 +1542,7 @@ function App() {
   const handleMouseMove = useCallback((e) => {
     const dateKey = formatDateToYYYYMMDD(currentDate);
     const totalPlannerMinutes = 24 * 60;
+    // Calculate pixels per minute based on the actual height of the timeline
     const pixelsPerMinute = plannerTimelineRef.current ? plannerTimelineRef.current.clientHeight / totalPlannerMinutes : 1;
 
     if (draggingActivity) {
@@ -1639,13 +1644,15 @@ function App() {
     const durationMinutes = endMinutes - startMinutes;
 
     const totalPlannerMinutes = 24 * 60;
-    const pixelsPerMinute = plannerTimelineRef.current ? plannerTimelineRef.current.clientHeight / totalPlannerMinutes : 1;
+    // Use a fixed height for the timeline to ensure consistent spacing
+    const timelineFixedDisplayHeight = 1440; // 1 pixel per minute for 24 hours
+    const pixelsPerMinute = timelineFixedDisplayHeight / totalPlannerMinutes;
 
     const topPx = startMinutes * pixelsPerMinute;
     const heightPx = durationMinutes * pixelsPerMinute;
 
     return { top: `${topPx}px`, height: `${heightPx}px`, };
-  }, [plannerTimelineRef]);
+  }, []); // Removed plannerTimelineRef from dependency as height is fixed
 
   // Effect to update dailyScheduleState whenever currentDate or underlying data changes
   useEffect(() => {
@@ -1686,13 +1693,14 @@ function App() {
             Your response MUST be a JSON object with the following structure:
             {{
                 "action": "modify_activity" | "shift_activities" | "add_activity" | "delete_activity",
-                "activityName": "string" (Name or part of the activity to target. Try to match closely to existing activity names if modifying/deleting.),
+                "activityName": "string" (Name or part of the activity to target. Try to match closely to existing activity names if modifying/deleting. Use the exact 'id' from the provided current schedule if possible for precise targeting.),
                 "targetDate": "string" (Date for the change, e.g., 'today', 'tomorrow', 'YYYY-MM-DD'. Infer 'today' if no date is given.),
                 "newPlannedStart": "string" (New start time in HH:MM format. REQUIRED for modify_activity and add_activity. If not provided by user, infer based on context or typical duration.),
                 "newPlannedEnd": "string" (New end time in HH:MM format. REQUIRED for modify_activity and add_activity. If not provided by user, infer based on context or typical duration (e.g., 30-60 mins).),
                 "durationChangeMinutes": "number" (Change in duration in minutes, e.g., 15 for +15m, -30 for -30m. Only for modify_activity. If provided, calculate newPlannedEnd from newPlannedStart + durationChangeMinutes.),
                 "shiftMinutes": "number" (Amount to shift activities in minutes, e.g., 30 for +30m, -15 for -15m. Only for shift_activities.),
-                "activityTypeFilter": "string" ("personal" | "academic" | "spiritual" | "physical" | "work" | "project", optional. Filter activities by type for shifts or adding new activities. Infer if adding new activity and type is clear from name.)
+                "activityTypeFilter": "string" ("personal" | "academic" | "spiritual" | "physical" | "work" | "project", optional. Filter activities by type for shifts or adding new activities. Infer if adding new activity and type is clear from name.),
+                "activityId": "string" (If you can identify the exact activity from the provided schedule context, include its 'id' here for precise targeting.)
             }}
 
             Key instructions for your parsing and suggestions:
@@ -1706,25 +1714,25 @@ function App() {
         }]
     });
 
-    const payload = {
-        contents: chatHistory,
-        generationConfig: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: "OBJECT",
-                properties: {
-                    action: { type: "STRING", enum: ["modify_activity", "shift_activities", "add_activity", "delete_activity"] },
-                    activityName: { type: "STRING", description: "Name or part of the activity to target" },
-                    targetDate: { type: "STRING", description: "Date for the change (e.g., 'today', 'tomorrow', 'YYYY-MM-DD')" },
-                    newPlannedStart: { type: "STRING", description: "New start time in HH:MM format" },
-                    newPlannedEnd: { type: "STRING", description: "New end time in HH:MM format" },
-                    durationChangeMinutes: { type: "NUMBER", description: "Change in duration in minutes (e.g., 15 for +15m, -30 for -30m)" },
-                    shiftMinutes: { type: "NUMBER", description: "Amount to shift activities in minutes (e.g., 30 for +30m, -15 for -15m)" },
-                    activityTypeFilter: { type: "STRING", enum: ["personal", "academic", "spiritual", "physical", "work", "project"], description: "Filter activities by type for shifts (optional)" },
-                },
-                required: ["action"]
-            }
+    const payload1 = {
+      contents: chatHistory,
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "OBJECT",
+          properties: {
+            action: { type: "STRING" },
+            activityName: { type: "STRING" },
+            targetDate: { type: "STRING" },
+            newPlannedStart: { type: "STRING" },
+            newPlannedEnd: { type: "STRING" },
+            durationChangeMinutes: { type: "NUMBER" },
+            shiftMinutes: { type: "NUMBER" },
+            activityTypeFilter: { type: "STRING" },
+            activityId: { type: "STRING" } // Added activityId to schema for precise targeting
+          }
         }
+      }
     };
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${appSettings.geminiApiKey}`;
@@ -1733,7 +1741,7 @@ function App() {
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload1)
       });
 
       const result = await response.json();
@@ -1746,7 +1754,8 @@ function App() {
         throw new Error(errorMessage);
       }
 
-      if (result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0) {
+      // Check for 'text' property in result.candidates[0].content.parts[0]
+      if (result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0 && result.candidates[0].content.parts[0].text) {
         const jsonString = result.candidates[0].content.parts[0].text;
         const parsedCommand = JSON.parse(jsonString);
         console.log("AI Parsed Command:", parsedCommand);
@@ -1788,7 +1797,10 @@ function App() {
 
 
           if (parsedCommand.action === 'modify_activity') {
-            const activityIndex = updatedDayActivities.findIndex(act => act.activity.toLowerCase().includes(parsedCommand.activityName.toLowerCase()));
+            const activityIndex = updatedDayActivities.findIndex(act =>
+                (parsedCommand.activityId && act.id === parsedCommand.activityId) || // Prefer ID if provided by AI
+                act.activity.toLowerCase().includes(parsedCommand.activityName.toLowerCase())
+            );
             if (activityIndex > -1) {
               const originalActivity = { ...updatedDayActivities[activityIndex] };
               let newStart = parsedCommand.newPlannedStart || originalActivity.plannedStart;
@@ -1904,7 +1916,10 @@ function App() {
             }
           } else if (parsedCommand.action === 'delete_activity') {
             const initialLength = updatedDayActivities.length;
-            updatedDayActivities = updatedDayActivities.filter(act => !act.activity.toLowerCase().includes(parsedCommand.activityName.toLowerCase()));
+            updatedDayActivities = updatedDayActivities.filter(act =>
+                (parsedCommand.activityId && act.id === parsedCommand.activityId) || // Prefer ID if provided by AI
+                act.activity.toLowerCase().includes(parsedCommand.activityName.toLowerCase())
+            );
             if (updatedDayActivities.length < initialLength) {
               changesApplied = true;
               showToast(`Activity "${parsedCommand.activityName}" deleted.`, 'success');
@@ -1957,7 +1972,7 @@ function App() {
       }]
     });
 
-    const payload = {
+    const payload2 = {
       contents: chatHistory,
       generationConfig: {
         responseMimeType: "application/json",
@@ -1981,7 +1996,7 @@ function App() {
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload2)
       });
 
       const result = await response.json();
@@ -1994,7 +2009,7 @@ function App() {
         throw new Error(errorMessage);
       }
 
-      if (result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0) {
+      if (result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0 && result.candidates[0].content.parts[0].text) {
         const jsonString = result.candidates[0].content.parts[0].text;
         const parsedTimes = JSON.parse(jsonString);
         const dateKey = formatDateToYYYYMMDD(currentDate);
@@ -2057,7 +2072,7 @@ function App() {
         <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
           {/* Header and Tabs */}
           <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.2</span></h1>
+            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.4</span></h1>
             <div className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('schedule')}
@@ -2265,7 +2280,8 @@ function App() {
                       pomodoroTimer.mode === 'long_break' ? 'border-purple-500' : 'border-transparent'
                     }`}
                     style={{
-                      clipPath: `polygon(50% 0%, 50% 50%, ${50 + 50 * Math.sin(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / Math.max(1, ((pomodoroTimer.mode === 'work' ? pomodoroSettings.work : (pomodoroTimer.mode === 'short_break' ? pomodoroSettings.shortBreak : pomodoroSettings.longBreak)) * 60)))))}}% ${50 - 50 * Math.cos(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / Math.max(1, ((pomodoroTimer.mode === 'work' ? pomodoroSettings.work : (pomodoroTimer.mode === 'short_break' ? pomodoroSettings.shortBreak : pomodoroSettings.longBreak)) * 60)))))}}%)`
+                      // Calculate the percentage of time left relative to the initial time for the current mode
+                      clipPath: `polygon(50% 0%, 50% 50%, ${50 + 50 * Math.sin(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / Math.max(1, pomodoroTimer.initialTime))))}% ${50 - 50 * Math.cos(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / Math.max(1, pomodoroTimer.initialTime))))}%)`
                     }}
                   ></div>
                 </div>
@@ -2343,20 +2359,15 @@ function App() {
                   </button>
                 </div>
 
-                {/* Audio Enable Button */}
-                {!audioEnabled && (
-                  <button
-                    onClick={handleEnableAudio}
-                    className="mt-6 px-4 py-2 bg-purple-500 text-white rounded-md shadow-md hover:bg-purple-600 transition-colors duration-200 flex items-center justify-center mx-auto"
-                  >
-                    <BellRing size={20} className="mr-2" /> Enable Sounds
-                  </button>
-                )}
-                {audioEnabled && (
-                  <p className="mt-6 text-sm text-green-700 flex items-center justify-center">
-                    <BellRing size={16} className="mr-1" /> Sounds Enabled
-                  </p>
-                )}
+                {/* Audio Toggle Button */}
+                <button
+                  onClick={toggleMute}
+                  className="mt-6 px-4 py-2 bg-gray-500 text-white rounded-md shadow-md hover:bg-gray-600 transition-colors duration-200 flex items-center justify-center mx-auto"
+                  aria-label={isMuted ? "Unmute sounds" : "Mute sounds"}
+                >
+                  {isMuted ? <VolumeX size={20} className="mr-2" /> : <Volume2 size={20} className="mr-2" />}
+                  {isMuted ? 'Unmute Sounds' : 'Mute Sounds'}
+                </button>
               </div>
 
               {/* Daily Insights */}
@@ -2417,7 +2428,7 @@ function App() {
                   {/* Visual Planner Timeline for Daily Editor (Now in Schedule Tab) */}
                   <div
                     ref={plannerTimelineRef}
-                    className="relative w-full h-[720px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200 mb-6"
+                    className="relative w-full h-[1440px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200 mb-6"
                     onDoubleClick={(e) => {
                       // Check if the double-click occurred directly on the timeline (not on an activity block)
                       // This is implicitly handled by stopping propagation in activity blocks.
@@ -2440,27 +2451,15 @@ function App() {
                             className="absolute left-0 w-full border-t border-gray-200 text-xs text-gray-500 pl-2"
                             style={{ top: `${(hour / 24) * 100}%`, height: '1px' }}
                         >
-                            <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:00</span>
+                            <span className="-translate-y-1/2 block text-sm font-semibold">{hour.toString().padStart(2, '0')}:00</span>
                         </div>
                         {hour < 24 && (
                             <>
                             <div
                                 className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                                style={{ top: `${(hour / 24) * 100 + (15 / 1440) * 100}%`, height: '1px' }}
-                            >
-                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:15</span>
-                            </div>
-                            <div
-                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
                                 style={{ top: `${(hour / 24) * 100 + (30 / 1440) * 100}%`, height: '1px' }}
                             >
-                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:30</span>
-                            </div>
-                            <div
-                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                                style={{ top: `${(hour / 24) * 100 + (45 / 1440) * 100}%`, height: '1px' }}
-                            >
-                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:45</span>
+                                <span className="-translate-y-1/2 block text-xs">{hour.toString().padStart(2, '0')}:30</span>
                             </div>
                             </>
                         )}
@@ -2483,7 +2482,7 @@ function App() {
 
                         let bgColor = 'bg-indigo-200';
                         if (activity.type === 'academic') bgColor = 'bg-blue-200';
-                        if (activity.type === 'spiritual') bgColor = 'bg-green-200';
+                        if (activity.type === 'spiritual') bgColor = 'bg-green-220'; // Adjusted for better visibility
                         if (activity.type === 'physical') bgColor = 'bg-red-200';
                         if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
 
@@ -2610,7 +2609,6 @@ function App() {
                                         )
                                       }
                                     `}
-                                    onDoubleClick={() => handleEditDailyActivity(activity)} // Double-click to edit the planned activity
                                   >
                                     <td className="py-3 px-4 text-sm font-medium text-gray-700">
                                       <span className={`${isPrayerBlock ? 'font-bold' : ''}`}>
@@ -2850,7 +2848,7 @@ function App() {
 
 
               {/* Visual Planner Timeline for Templates */}
-              <div ref={plannerTimelineRef} className="relative w-full h-[720px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200">
+              <div ref={plannerTimelineRef} className="relative w-full h-[1440px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200">
               {/* Time Grid Lines and Labels */}
               {[...Array(25)].map((_, hour) => (
                   <React.Fragment key={hour}>
@@ -2858,27 +2856,15 @@ function App() {
                       className="absolute left-0 w-full border-t border-gray-200 text-xs text-gray-500 pl-2"
                       style={{ top: `${(hour / 24) * 100}%`, height: '1px' }}
                   >
-                      <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:00</span>
+                      <span className="-translate-y-1/2 block text-sm font-semibold">{hour.toString().padStart(2, '0')}:00</span>
                   </div>
                   {hour < 24 && (
                       <>
                       <div
                           className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                          style={{ top: `${(hour / 24) * 100 + (15 / 1440) * 100}%`, height: '1px' }}
-                      >
-                          <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:15</span>
-                      </div>
-                      <div
-                          className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
                           style={{ top: `${(hour / 24) * 100 + (30 / 1440) * 100}%`, height: '1px' }}
                       >
-                          <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:30</span>
-                      </div>
-                      <div
-                          className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                          style={{ top: `${(hour / 24) * 100 + (45 / 1440) * 100}%`, height: '1px' }}
-                      >
-                          <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:45</span>
+                          <span className="-translate-y-1/2 block text-xs">{hour.toString().padStart(2, '0')}:30</span>
                       </div>
                       </>
                   )}
@@ -2892,7 +2878,7 @@ function App() {
 
                   let bgColor = 'bg-indigo-200';
                   if (activity.type === 'academic') bgColor = 'bg-blue-200';
-                  if (activity.type === 'spiritual') bgColor = 'bg-green-200';
+                  if (activity.type === 'spiritual') bgColor = 'bg-green-220';
                   if (activity.type === 'physical') bgColor = 'bg-red-200';
                   if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
 
@@ -4094,14 +4080,12 @@ const GanttChart = ({ projectTasks }) => {
   minDate.setDate(1);
   minDate.setHours(0,0,0,0);
 
-  // Adjust maxDate to end of the month
+  // Add some padding to the date range (e.g., one month before and after)
+  minDate.setMonth(minDate.getMonth() - 1);
   maxDate.setMonth(maxDate.getMonth() + 1);
   maxDate.setDate(0); // Last day of previous month
   maxDate.setHours(23,59,59,999);
 
-  // Add some padding to the date range (e.g., one month before and after)
-  minDate.setMonth(minDate.getMonth() - 1);
-  maxDate.setMonth(maxDate.getMonth() + 1);
 
   const totalDays = (maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24);
 
