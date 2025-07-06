@@ -2389,23 +2389,30 @@ const handleReconnectGoogleCalendar = useCallback(() => {
     // Attempt to revoke token or sign out if GSI is loaded
     if (window.google && window.google.accounts && window.google.accounts.oauth2 && tokenClientRef.current) {
       try {
-        // This attempts to revoke the token from Google's side
-        // Note: Direct token revocation might not always be possible from client-side
-        // without a server, but signing out of the GSI session is the client-side best practice.
-        window.google.accounts.oauth2.revoke(window.gapi.client.getToken().access_token, () => {
-          console.log('Access token revoked.');
+        const currentToken = window.gapi.client.getToken(); // Get the current token
+
+        if (currentToken && currentToken.access_token) { // Check if token and access_token exist
+          window.google.accounts.oauth2.revoke(currentToken.access_token, () => {
+            console.log('Access token revoked.');
+            showToast('Google Calendar disconnected successfully!', 'success');
+            setIsConnectingGCal(false);
+          });
+        } else {
+          console.log('No active access token to revoke, proceeding with local disconnect.');
           showToast('Google Calendar disconnected successfully!', 'success');
           setIsConnectingGCal(false);
-        });
-        // Clear gapi client's token
+        }
+
+        // Clear gapi client's token regardless
         window.gapi.client.setToken('');
+
       } catch (error) {
         console.error('Error during Google Calendar disconnect:', error);
         showToast('Failed to disconnect Google Calendar. See console for details.', 'error', 7000);
         setIsConnectingGCal(false);
       }
     } else {
-      showToast('Google API libraries not fully loaded or no active session to disconnect.', 'info');
+      showToast('Google API libraries not fully loaded or no active session to disconnect locally.', 'info');
       setIsConnectingGCal(false);
     }
 
