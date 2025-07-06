@@ -449,6 +449,9 @@ function App() {
   const [isImportingGCal, setIsImportingGCal] = useState(false);
   const [isExportingGCal, setIsExportingGCal] = useState(false);
 
+  // NEW STATES for GCal Import Date Range
+  const [gCalImportStartDate, setGCalImportStartDate] = useState(currentDate);
+  const [gCalImportEndDate, setGCalImportEndDate] = useState(currentDate);
   
   const [pomodoroTimer, setPomodoroTimer] = useState({
     running: false,
@@ -557,7 +560,7 @@ function App() {
   const [reminderActivity, setReminderActivity] = useState(null);
   const remindersShownToday = useRef(new Set());
 
-  const [audioEnabled, setAudioEnabled] = useState(true); // Default to true
+  const audioEnabled = useState(true); // Default to true
   const [isMuted, setIsMuted] = useState(false); // New state for mute toggle
 
   const [fastingDates, setFastingDates] = useState(() => {
@@ -1991,7 +1994,7 @@ const handleFetchIqamahTimes = useCallback(async () => {
     }
 
     let promptText = '';
-    let disabledReason = '';
+    //let disabledReason = '';
 
     if (appSettings.iqamahUrl) {
       promptText = `Browse the content of this URL: ${appSettings.iqamahUrl}. From the content, extract the Iqamah (or prayer) times for Fajr, Dhuhr, Asr, Maghrib, and Isha for today, ${formatDateToYYYYMMDD(currentDate)}. If a specific Iqamah time is not found, provide the general prayer time for that prayer. Respond in JSON format only. If no times can be found for a specific prayer, return an empty string for its value.
@@ -2207,14 +2210,17 @@ const handleFetchIqamahTimes = useCallback(async () => {
     showToast('Importing meetings from Google Calendar...', 'info', 5000);
 
     try {
-      const now = new Date();
-      const oneMonthLater = new Date();
-      oneMonthLater.setMonth(oneMonthLater.getMonth() + 1);
+      // Use the selected start and end dates from state
+      const timeMin = new Date(gCalImportStartDate);
+      timeMin.setHours(0, 0, 0, 0); // Start of the day
+
+      const timeMax = new Date(gCalImportEndDate);
+      timeMax.setHours(23, 59, 59, 999); // End of the day
 
       const response = await window.gapi.client.calendar.events.list({
-        'calendarId': 'primary', // 'primary' usually refers to the user's main calendar
-        'timeMin': now.toISOString(),
-        'timeMax': oneMonthLater.toISOString(), // Fetch events for the next month
+        'calendarId': 'primary',
+        'timeMin': timeMin.toISOString(),
+        'timeMax': timeMax.toISOString(),
         'showDeleted': false,
         'singleEvents': true,
         'orderBy': 'startTime',
@@ -2224,47 +2230,59 @@ const handleFetchIqamahTimes = useCallback(async () => {
       console.log('Fetched Google Calendar Events:', events);
 
       if (events.length > 0) {
-        const dateKey = formatDateToYYYYMMDD(currentDate);
-        setDailyCustomSchedules(prev => {
-          let currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] :
-                                   generateScheduleForDate(currentDate, null, true, plannerSchedule, prev, fastingDates, iqamahConfig);
+        // Create a map to hold updates for dailyCustomSchedules
+        const updatesToDailyCustomSchedules = {};
 
-          events.forEach(event => {
-            const eventStart = event.start.dateTime || event.start.date; // Use dateTime for specific time, date for all-day
-            const eventEnd = event.end.dateTime || event.end.date;
+        events.forEach(event => {
+          const eventStart = event.start.dateTime || event.start.date;
+          const eventEnd = event.end.dateTime || event.end.date;
 
-            if (eventStart && eventEnd) {
-              const startDate = new Date(eventStart);
-              const endDate = new Date(eventEnd);
+          if (eventStart && eventEnd) {
+            const startDate = new Date(eventStart);
+            const endDate = new Date(eventEnd);
+            const eventDateKey = formatDateToYYYYMMDD(startDate); // Key for the day the event falls on
 
-              // Only import events for the current displayed day
-              if (formatDateToYYYYMMDD(startDate) === formatDateToYYYYMMDD(currentDate)) {
-                const newActivity = {
-                  id: `gcal-${event.id}`, // Use Google Event ID for unique ID
-                  activity: event.summary || 'Google Calendar Event',
-                  plannedStart: formatTo24HourTime(startDate),
-                  plannedEnd: formatTo24HourTime(endDate),
-                  type: 'work', // Assume meetings are 'work' type, user can change
-                  recurrenceType: 'none', // Imported as one-time events
-                  recurrenceDays: [],
-                  constraintType: 'hard', // Meetings are usually hard constraints
-                  isGoogleCalendarEvent: true, // Mark as imported from GCal
-                };
-
-                // Check if event already exists to avoid duplicates
-                if (!currentDaySchedule.some(act => act.id === newActivity.id)) {
-                  currentDaySchedule.push(newActivity);
-                }
-              }
+            // Ensure the target day's schedule is initialized before adding events
+            if (!updatesToDailyCustomSchedules[eventDateKey]) {
+              // If we don't have a custom schedule for this day yet, generate it from template
+              updatesToDailyCustomSchedules[eventDateKey] = dailyCustomSchedules[eventDateKey] ? [...dailyCustomSchedules[eventDateKey]] :
+                                                            generateScheduleForDate(startDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates, iqamahConfig);
             }
-          });
-          // Sort after adding new events
-          currentDaySchedule.sort((a, b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart));
-          return { ...prev, [dateKey]: currentDaySchedule };
+
+            const newActivity = {
+              id: `gcal-${event.id}`, // Use Google Event ID for unique ID
+              activity: `${event.summary || 'Google Calendar Event'} (GC)`, // Add "GC" tag
+              plannedStart: formatTo24HourTime(startDate),
+              plannedEnd: formatTo24HourTime(endDate),
+              type: 'work', // Assume meetings are 'work' type, user can change
+              recurrenceType: 'none', // Imported as one-time events
+              recurrenceDays: [],
+              constraintType: 'hard', // Meetings are usually hard constraints
+              isGoogleCalendarEvent: true, // Mark as imported from GCal
+              originalSummary: event.summary || '', // Store original summary
+            };
+
+            // Check if event already exists to avoid duplicates
+            if (!updatesToDailyCustomSchedules[eventDateKey].some(act => act.id === newActivity.id)) {
+              updatesToDailyCustomSchedules[eventDateKey].push(newActivity);
+            }
+          }
         });
+
+        // Apply all updates to dailyCustomSchedules
+        setDailyCustomSchedules(prev => {
+          const newState = { ...prev };
+          for (const dateKey in updatesToDailyCustomSchedules) {
+            // Sort activities for each updated day
+            updatesToDailyCustomSchedules[dateKey].sort((a, b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart));
+            newState[dateKey] = updatesToDailyCustomSchedules[dateKey];
+          }
+          return newState;
+        });
+
         showToast(`Successfully imported ${events.length} meetings from Google Calendar!`, 'success');
       } else {
-        showToast('No upcoming meetings found in Google Calendar for the next month.', 'info');
+        showToast(`No upcoming meetings found in Google Calendar between ${formatDateToYYYYMMDD(gCalImportStartDate)} and ${formatDateToYYYYMMDD(gCalImportEndDate)}.`, 'info');
       }
     } catch (error) {
       console.error('Error fetching Google Calendar events:', error);
@@ -2272,7 +2290,7 @@ const handleFetchIqamahTimes = useCallback(async () => {
     } finally {
       setIsImportingGCal(false);
     }
-  }, [appSettings.googleCalendarConnected, currentDate, setDailyCustomSchedules, showToast, plannerSchedule, fastingDates, iqamahConfig]);
+  }, [appSettings.googleCalendarConnected, gCalImportStartDate, gCalImportEndDate, setDailyCustomSchedules, showToast, dailyCustomSchedules, plannerSchedule, fastingDates, iqamahConfig]);
 
   const addActivityToGoogleCalendar = useCallback(async (activity) => {
     if (!appSettings.googleCalendarConnected) {
@@ -2316,7 +2334,52 @@ const handleFetchIqamahTimes = useCallback(async () => {
       setIsExportingGCal(false);
     }
   }, [appSettings.googleCalendarConnected, currentDate, subTaskDetails, showToast]);
+const handleReconnectGoogleCalendar = useCallback(() => {
+    setIsConnectingGCal(true);
+    setAppSettings(prev => ({ ...prev, googleCalendarConnected: false })); // Force disconnect state
+    gapiLoaded.current = false; // Reset GAPI loaded status
+    gsiLoaded.current = false;  // Reset GSI loaded status
+    tokenClientRef.current = null; // Clear token client reference
 
+    showToast('Attempting to reconnect Google Calendar...', 'info', 5000);
+
+    // Re-initialize GAPI and GSI (this will be handled by the useEffect)
+    // Then, call connectGoogleCalendar to initiate the auth flow
+    // A small timeout ensures the state updates propagate before re-triggering the OAuth flow
+    setTimeout(() => {
+      // The useEffect for loading gapi/gsi will re-run due to appSettings.googleClientId change
+      // and gapiLoaded/gsiLoaded being false.
+      // After libraries are re-loaded, connectGoogleCalendar will be called.
+      if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+         // Re-initialize tokenClient if it's null (it should be after clearing tokenClientRef.current)
+         tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+            client_id: appSettings.googleClientId,
+            scope: 'https://www.googleapis.com/auth/calendar.events',
+            callback: (tokenResponse) => {
+              if (tokenResponse && tokenResponse.access_token) {
+                window.gapi.client.setToken(tokenResponse);
+                setAppSettings(prev => ({ ...prev, googleCalendarConnected: true }));
+                showToast('Google Calendar reconnected successfully!', 'success');
+              } else {
+                setAppSettings(prev => ({ ...prev, googleCalendarConnected: false }));
+                showToast('Failed to reconnect Google Calendar. Please try again.', 'error');
+              }
+              setIsConnectingGCal(false);
+            },
+            error_callback: (error) => {
+              console.error('GSI Reconnect Error:', error);
+              showToast('Google Calendar reconnection failed. See console for details.', 'error', 7000);
+              setIsConnectingGCal(false);
+            }
+          });
+          tokenClientRef.current.requestAccessToken();
+      } else {
+          console.warn('Google Identity Services not available for immediate reconnect. Please refresh page if issues persist.');
+          showToast('Failed to re-initialize Google Calendar connection. Please refresh the page.', 'error', 7000);
+          setIsConnectingGCal(false);
+      }
+    }, 100); // Small delay to allow state to update
+  }, [setAppSettings, showToast, appSettings.googleClientId, setIsConnectingGCal]);
 
   return (
     <ErrorBoundary>
@@ -2324,7 +2387,7 @@ const handleFetchIqamahTimes = useCallback(async () => {
         <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
           {/* Header and Tabs */}
           <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.10</span></h1>
+            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.11</span></h1>
             <div className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('schedule')}
@@ -2389,6 +2452,25 @@ const handleFetchIqamahTimes = useCallback(async () => {
                 >
                   <ChevronRight size={20} />
                 </button>
+              </div>
+              {/* NEW: Google Calendar Import Date Range */}
+              <div className="flex items-center space-x-2 mb-4">
+                <label htmlFor="gCalImportStartDate" className="block text-sm font-medium text-gray-700">Import GCal From:</label>
+                <input
+                  type="date"
+                  id="gCalImportStartDate"
+                  value={formatDateToYYYYMMDD(gCalImportStartDate)}
+                  onChange={(e) => setGCalImportStartDate(new Date(e.target.value))}
+                  className="p-2 border border-gray-300 rounded-md"
+                />
+                <label htmlFor="gCalImportEndDate" className="block text-sm font-medium text-gray-700">To:</label>
+                <input
+                  type="date"
+                  id="gCalImportEndDate"
+                  value={formatDateToYYYYMMDD(gCalImportEndDate)}
+                  onChange={(e) => setGCalImportEndDate(new Date(e.target.value))}
+                  className="p-2 border border-gray-300 rounded-md"
+                />
               </div>
 
               {/* Base Template Selection for Current Day */}
@@ -2861,7 +2943,7 @@ const handleFetchIqamahTimes = useCallback(async () => {
                                 const assignedTaskInfo = getAssignedTaskInfo(activity.id);
                                 const actualDuration = getActualDuration(log);
                                 const progressBarPercentage = getProgressBarPercentage(activity.id);
-                                const isSubdividedBlock = (activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && activity.id.includes('-part');
+                                //const isSubdividedBlock = (activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && activity.id.includes('-part');
                                 const currentActivityNotes = subTaskDetails[activity.id] || '';
                                 const timeGroup = getTimeOfDayGroup(activity.plannedStart);
                                 const activityNameLower = activity.activity.toLowerCase();
@@ -3065,6 +3147,13 @@ const handleFetchIqamahTimes = useCallback(async () => {
                                                   className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
                                                   {isExportingGCal ? 'Adding...' : 'Add to Google Calendar'}
+                                                </button>
+                                                {/* NEW: Delete Daily Activity Button */}
+                                                <button
+                                                  onClick={() => handleDeleteDailyActivity(activity.id)}
+                                                  className="block w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-red-100"
+                                                >
+                                                  Delete Activity
                                                 </button>
                                               </div>
                                             </div>
@@ -3690,6 +3779,18 @@ const handleFetchIqamahTimes = useCallback(async () => {
                     </>
                   )}
                 </button>
+                {/* NEW: Refresh/Reconnect Google Calendar Button */}
+                {appSettings.googleCalendarConnected && (
+                  <button
+                    onClick={handleReconnectGoogleCalendar}
+                    className={`ml-2 px-4 py-2 rounded-md shadow-md transition-colors duration-200 flex items-center
+                      bg-orange-500 text-white hover:bg-orange-600
+                    `}
+                    disabled={isConnectingGCal}
+                  >
+                    <RefreshCcw size={20} className="mr-2" /> Reconnect
+                  </button>
+                )}
               </div>
 
               {/* Iqamah Times Settings */}
