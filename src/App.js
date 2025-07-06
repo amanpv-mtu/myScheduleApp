@@ -425,6 +425,15 @@ function App() {
       return { work: 25, shortBreak: 5, longBreak: 15, longBreakInterval: 4, reminderTime: 5 };
     }
   });
+  const [appSettings, setAppSettings] = useState(() => {
+    try {
+      const savedSettings = localStorage.getItem('appSettings');
+      return savedSettings ? JSON.parse(savedSettings) : { geminiApiKey: '', location: { city: '', country: '' } };
+    } catch (error) {
+      console.error("Failed to parse appSettings from localStorage:", error);
+      return { geminiApiKey: '', location: { city: '', country: '' } };
+    }
+  });
   const [pomodoroTimer, setPomodoroTimer] = useState({
     running: false,
     mode: 'work',
@@ -440,7 +449,7 @@ function App() {
   const [reportDate, setReportDate] = useState(new Date());
   const intervalRef = useRef(null);
   // Changed audio source to a more common format
-  const audioRef = useRef(new Audio('../public/bell-ringing-02.mp3'));
+  const audioRef = useRef(new Audio('https://www.soundjay.com/misc/small-bell-ringing-01.mp3'));
   const [currentActivityId, setCurrentActivityId] = useState(null);
 
   const [dailyScheduleState, setDailyScheduleState] = useState([]); // This will be the effective schedule for the current day
@@ -519,10 +528,10 @@ function App() {
 
   const [dataManagementOptions, setDataManagementOptions] = useState({
     export: {
-      tasks: true, dailySchedule: true, activityLogs: true, pomodoroSettings: true, subTaskDetails: true, dailyCustomSchedules: true, fastingDates: true,
+      tasks: true, dailySchedule: true, activityLogs: true, pomodoroSettings: true, subTaskDetails: true, dailyCustomSchedules: true, fastingDates: true, appSettings: true
     },
     import: {
-      tasks: true, dailySchedule: true, activityLogs: true, pomodoroSettings: true, subTaskDetails: true, dailyCustomSchedules: true, fastingDates: true,
+      tasks: true, dailySchedule: true, activityLogs: true, pomodoroSettings: true, subTaskDetails: true, dailyCustomSchedules: true, fastingDates: true, appSettings: true
     }
   });
 
@@ -578,13 +587,11 @@ function App() {
     try {
       const savedIqamahConfig = localStorage.getItem('iqamahConfig');
       return savedIqamahConfig ? JSON.parse(savedIqamahConfig) : {
-        url: '',
-        autoFetch: false,
         manualTimes: {}, // { 'YYYY-MM-DD': { fajr: 'HH:MM', dhuhr: 'HH:MM', ... } }
       };
     } catch (error) {
       console.error("Failed to parse iqamahConfig from localStorage:", error);
-      return { url: '', autoFetch: false, manualTimes: {} };
+      return { manualTimes: {} };
     }
   });
 
@@ -599,6 +606,7 @@ function App() {
       running: false
     }));
   }, [pomodoroSettings]);
+  useEffect(() => { localStorage.setItem('appSettings', JSON.stringify(appSettings)); }, [appSettings]);
   useEffect(() => { localStorage.setItem('subTaskDetails', JSON.stringify(subTaskDetails)); }, [subTaskDetails]);
   useEffect(() => { localStorage.setItem('plannerSchedule', JSON.stringify(plannerSchedule)); }, [plannerSchedule]);
   useEffect(() => { localStorage.setItem('projectTasks', JSON.stringify(projectTasks)); }, [projectTasks]);
@@ -794,7 +802,7 @@ function App() {
   const continuePomodoro = () => {
     setPomodoroTimer(prev => ({
       ...prev, running: true, mode: prev.nextMode, timeLeft: prev.nextTimeLeft,
-      showAlert: false, alertMessage: '', nextMode: null, nextTimeLeft: 0,
+      showAlert: false, alertMode: null, nextTimeLeft: 0,
     }));
   };
 
@@ -803,7 +811,7 @@ function App() {
   const skipBreak = () => {
     setPomodoroTimer(prev => ({
       ...prev, running: true, mode: 'work', timeLeft: pomodoroSettings.work * 60,
-      showAlert: false, alertMessage: '', nextMode: null, nextTimeLeft: 0,
+      showAlert: false, alertMode: null, nextTimeLeft: 0,
     }));
   };
 
@@ -1379,6 +1387,7 @@ function App() {
     if (dataManagementOptions.export.fastingDates) dataToExport.fastingDates = fastingDates;
     if (dataManagementOptions.export.dailyCustomSchedules) dataToExport.dailyCustomSchedules = dailyCustomSchedules;
     if (dataManagementOptions.export.iqamahConfig) dataToExport.iqamahConfig = iqamahConfig;
+    if (dataManagementOptions.export.appSettings) dataToExport.appSettings = appSettings;
 
 
     const jsonString = JSON.stringify(dataToExport, null, 2);
@@ -1416,6 +1425,7 @@ function App() {
           if (dataManagementOptions.import.fastingDates && importedData.fastingDates) { setFastingDates(importedData.fastingDates); importedCount++; message += "- Fasting Dates: Imported\n"; } else if (dataManagementOptions.import.fastingDates && !importedData.fastingDates) { skippedCount++; message += "- Fasting Dates: Skipped (not found in file)\n"; }
           if (dataManagementOptions.import.dailyCustomSchedules && importedData.dailyCustomSchedules) { setDailyCustomSchedules(importedData.dailyCustomSchedules); importedCount++; message += "- Daily Custom Schedules: Imported\n"; } else if (dataManagementOptions.import.dailyCustomSchedules && !importedData.dailyCustomSchedules) { skippedCount++; message += "- Daily Custom Schedules: Skipped (not found in file)\n"; }
           if (dataManagementOptions.import.iqamahConfig && importedData.iqamahConfig) { setIqamahConfig(importedData.iqamahConfig); importedCount++; message += "- Iqamah Config: Imported\n"; } else if (dataManagementOptions.import.iqamahConfig && !importedData.iqamahConfig) { skippedCount++; message += "- Iqamah Config: Skipped (not found in file)\n"; }
+          if (dataManagementOptions.import.appSettings && importedData.appSettings) { setAppSettings(importedData.appSettings); importedCount++; message += "- App Settings: Imported\n"; } else if (dataManagementOptions.import.appSettings && !importedData.appSettings) { skippedCount++; message += "- App Settings: Skipped (not found in file)\n"; }
 
 
           if (importedCount === 0 && skippedCount === 0) { message = "No data categories were selected for import or found in the file."; }
@@ -1599,11 +1609,51 @@ function App() {
         showToast("Please enter a command for the AI assistant.", "error");
         return;
     }
+    if (!appSettings.geminiApiKey) {
+        showToast("Please enter your Gemini API Key in Settings to use the AI assistant.", "error", 5000);
+        return;
+    }
 
     showToast("Processing AI command...", "info", 5000);
 
+    const currentScheduleContext = dailyScheduleState.map(activity => ({
+        activity: activity.activity,
+        plannedStart: activity.plannedStart,
+        plannedEnd: activity.plannedEnd,
+        type: activity.type,
+        constraintType: activity.constraintType,
+    }));
+
     const chatHistory = [];
-    chatHistory.push({ role: "user", parts: [{ text: `Parse this schedule modification request into JSON: "${userInput}". Be precise with activity names and times. If a time is not specified, do not include it. Infer 'today' if no date is given. If duration is changed, calculate newPlannedEnd based on newPlannedStart. If an activity name is not clear, suggest options. Use the current date as ${formatDateToYYYYMMDD(currentDate)} for 'today'.` }] });
+    chatHistory.push({
+        role: "user",
+        parts: [{
+            text: `Given the current daily schedule (today is ${formatDateToYYYYMMDD(currentDate)}):
+            ${JSON.stringify(currentScheduleContext)}
+
+            Please parse this schedule modification request into a JSON object.
+            Your response MUST be a JSON object with the following structure:
+            {
+                "action": "modify_activity" | "shift_activities" | "add_activity" | "delete_activity",
+                "activityName": "string" (Name or part of the activity to target),
+                "targetDate": "string" (Date for the change, e.g., 'today', 'tomorrow', 'YYYY-MM-DD'. Infer 'today' if no date is given.),
+                "newPlannedStart": "string" (New start time in HH:MM format. REQUIRED for modify_activity and add_activity. If not provided by user, infer based on context or typical duration.),
+                "newPlannedEnd": "string" (New end time in HH:MM format. REQUIRED for modify_activity and add_activity. If not provided by user, infer based on context or typical duration (e.g., 30-60 mins).),
+                "durationChangeMinutes": "number" (Change in duration in minutes, e.g., 15 for +15m, -30 for -30m. Only for modify_activity. If provided, calculate newPlannedEnd from newPlannedStart + durationChangeMinutes.),
+                "shiftMinutes": "number" (Amount to shift activities in minutes, e.g., 30 for +30m, -15 for -15m. Only for shift_activities.),
+                "activityTypeFilter": "string" ("personal" | "academic" | "spiritual" | "physical" | "work" | "project", optional. Filter activities by type for shifts or adding new activities. Infer if adding new activity and type is clear from name.)
+            }
+
+            Key instructions for your parsing and suggestions:
+            1.  **Contextual Awareness**: Use the provided 'current daily schedule' to understand existing activities, their times, types, and constraint types.
+            2.  **Hard Constraints**: Activities with "constraintType": "hard" are IMMOVABLE. If a requested change conflicts with a hard constraint, suggest an alternative that avoids the conflict or state that the change cannot be made without violating a hard constraint.
+            3.  **Adjustable/Removable Activities**: If a change to one activity (e.g., extending its duration or shifting its start time) causes an overlap with an 'adjustable' or 'removable' activity, automatically shift or shrink the overlapping 'adjustable'/'removable' activities to accommodate the change, if possible. For 'removable' activities, suggest deleting them if no other adjustment is feasible.
+            4.  **Inference for Missing Times/Durations**: For 'modify_activity' or 'add_activity', if \`newPlannedStart\` or \`newPlannedEnd\` are not explicitly provided by the user, you MUST infer them. If only one is given, infer the other based on a typical duration (e.g., 30-60 minutes for a new activity, or maintaining existing duration for modifications). If neither is given for a new activity, suggest a reasonable default like '09:00' to '09:30'.
+            5.  **Complete Output**: Ensure all relevant fields in the JSON schema are populated with the best possible suggestion, even if not explicitly mentioned by the user, to make the command executable seamlessly.
+
+            User request: "${userInput}"`
+        }]
+    });
 
     const payload = {
         contents: chatHistory,
@@ -1615,8 +1665,8 @@ function App() {
                     action: { type: "STRING", enum: ["modify_activity", "shift_activities", "add_activity", "delete_activity"] },
                     activityName: { type: "STRING", description: "Name or part of the activity to target" },
                     targetDate: { type: "STRING", description: "Date for the change (e.g., 'today', 'tomorrow', 'YYYY-MM-DD')" },
-                    newPlannedStart: { type: "STRING", description: "New start time in HH:MM format (optional)" },
-                    newPlannedEnd: { type: "STRING", description: "New end time in HH:MM format (optional)" },
+                    newPlannedStart: { type: "STRING", description: "New start time in HH:MM format" }, // Made required
+                    newPlannedEnd: { type: "STRING", description: "New end time in HH:MM format" },     // Made required
                     durationChangeMinutes: { type: "NUMBER", description: "Change in duration in minutes (e.g., 15 for +15m, -30 for -30m)" },
                     shiftMinutes: { type: "NUMBER", description: "Amount to shift activities in minutes (e.g., 30 for +30m, -15 for -15m)" },
                     activityTypeFilter: { type: "STRING", enum: ["personal", "academic", "spiritual", "physical", "work", "project"], description: "Filter activities by type for shifts (optional)" },
@@ -1626,8 +1676,7 @@ function App() {
         }
     };
 
-    const apiKey = ""; // Canvas will automatically provide this at runtime
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${appSettings.geminiApiKey}`;
 
     try {
       const response = await fetch(apiUrl, {
@@ -1786,8 +1835,8 @@ function App() {
             const newActivity = {
               id: crypto.randomUUID(),
               activity: parsedCommand.activityName || 'New Activity',
-              plannedStart: parsedCommand.newPlannedStart || '09:00',
-              plannedEnd: parsedCommand.newPlannedEnd || '10:00',
+              plannedStart: parsedCommand.newPlannedStart || '09:00', // Should be inferred by AI
+              plannedEnd: parsedCommand.newPlannedEnd || '10:00',   // Should be inferred by AI
               type: parsedCommand.activityTypeFilter || 'personal',
               recurrenceType: 'none', // AI adds to daily, so no recurrence
               recurrenceDays: [],
@@ -1831,43 +1880,96 @@ function App() {
       console.error("Error calling Gemini API:", error);
       showToast(`Error communicating with AI: ${error.message}. Please check your API key and try again later.`, "error");
     }
-  }, [currentDate, dailyCustomSchedules, plannerSchedule, fastingDates, iqamahConfig, showToast]);
+  }, [currentDate, dailyScheduleState, dailyCustomSchedules, plannerSchedule, fastingDates, iqamahConfig, showToast, appSettings.geminiApiKey]);
 
   // --- Iqamah Times Handlers ---
   const handleFetchIqamahTimes = useCallback(async () => {
-    if (!iqamahConfig.url) {
-      showToast("Iqamah URL is empty. Please provide a URL in settings.", "error");
+    if (!appSettings.geminiApiKey) {
+      showToast("Please enter your Gemini API Key in Settings to fetch Iqamah times.", "error", 5000);
       return;
     }
-    showToast("Fetching Iqamah times...", "info");
-    try {
-      const fetchUrl = iqamahConfig.url.replace('{YYYY-MM-DD}', formatDateToYYYYMMDD(currentDate));
-      const response = await fetch(fetchUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      const dateKey = formatDateToYYYYMMDD(currentDate);
-
-      setIqamahConfig(prev => ({
-        ...prev,
-        manualTimes: {
-          ...prev.manualTimes,
-          [dateKey]: {
-            fajr: data.fajr || prev.manualTimes[dateKey]?.fajr,
-            dhuhr: data.dhuhr || prev.manualTimes[dateKey]?.dhuhr,
-            asr: data.asr || prev.manualTimes[dateKey]?.asr,
-            maghrib: data.maghrib || prev.manualTimes[dateKey]?.maghrib,
-            isha: data.isha || prev.manualTimes[dateKey]?.isha,
-          }
-        }
-      }));
-      showToast("Iqamah times fetched successfully!", "success");
-    } catch (error) {
-      console.error("Error fetching Iqamah times:", error);
-      showToast(`Failed to fetch Iqamah times: ${error.message}`, "error");
+    if (!appSettings.location.city || !appSettings.location.country) {
+      showToast("Please enter your City and Country in Settings to fetch Iqamah times.", "error", 5000);
+      return;
     }
-  }, [iqamahConfig.url, currentDate, showToast]);
+
+    showToast("Fetching Iqamah times via AI...", "info", 5000);
+
+    const chatHistory = [];
+    chatHistory.push({
+      role: "user",
+      parts: [{
+        text: `Provide Iqamah prayer times for ${formatDateToYYYYMMDD(currentDate)} for ${appSettings.location.city}, ${appSettings.location.country}. Respond in JSON format only. If you cannot find exact Iqamah times, provide approximate prayer times (e.g., based on calculated prayer times for the location). If no times can be found, return empty strings for values.
+        JSON format: {"fajr": "HH:MM", "dhuhr": "HH:MM", "asr": "HH:MM", "maghrib": "HH:MM", "isha": "HH:MM"}`
+      }]
+    });
+
+    const payload = {
+      contents: chatHistory,
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "OBJECT",
+          properties: {
+            fajr: { type: "STRING" },
+            dhuhr: { type: "STRING" },
+            asr: { type: "STRING" },
+            maghrib: { type: "STRING" },
+            isha: { type: "STRING" },
+          },
+          required: ["fajr", "dhuhr", "asr", "maghrib", "isha"]
+        }
+      }
+    };
+
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${appSettings.geminiApiKey}`;
+
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        let errorMessage = `API Error: ${response.status} ${response.statusText}`;
+        if (result.error && result.error.message) {
+          errorMessage += `: ${result.error.message}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      if (result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0) {
+        const jsonString = result.candidates[0].content.parts[0].text;
+        const parsedTimes = JSON.parse(jsonString);
+        const dateKey = formatDateToYYYYMMDD(currentDate);
+
+        setIqamahConfig(prev => ({
+          ...prev,
+          manualTimes: {
+            ...prev.manualTimes,
+            [dateKey]: {
+              fajr: parsedTimes.fajr || '',
+              dhuhr: parsedTimes.dhuhr || '',
+              asr: parsedTimes.asr || '',
+              maghrib: parsedTimes.maghrib || '',
+              isha: parsedTimes.isha || '',
+            }
+          }
+        }));
+        showToast("Iqamah times fetched successfully via AI!", "success");
+      } else {
+        console.error("AI response structure unexpected for Iqamah times:", result);
+        showToast("AI could not retrieve Iqamah times. Please try again.", "error");
+      }
+    } catch (error) {
+      console.error("Error calling Gemini API for Iqamah times:", error);
+      showToast(`Failed to fetch Iqamah times via AI: ${error.message}.`, "error");
+    }
+  }, [appSettings.geminiApiKey, appSettings.location, currentDate, showToast]);
+
 
   const handleManualIqamahChange = useCallback((prayer, time) => {
     const dateKey = formatDateToYYYYMMDD(currentDate);
@@ -1893,12 +1995,7 @@ function App() {
     showToast("Manual Iqamah overrides cleared for today.", "info");
   }, [currentDate, showToast]);
 
-  // Effect to auto-fetch on load if enabled
-  useEffect(() => {
-    if (iqamahConfig.autoFetch && iqamahConfig.url) {
-      handleFetchIqamahTimes();
-    }
-  }, [iqamahConfig.autoFetch, iqamahConfig.url, handleFetchIqamahTimes]);
+  // No auto-fetch on load for AI-based Iqamah times, user explicitly clicks.
 
 
   return (
@@ -1907,7 +2004,7 @@ function App() {
         <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
           {/* Header and Tabs */}
           <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-            <h1 className="text-3xl font-bold text-indigo-700">My Daily Rhythm <span className="text-xl text-gray-500">- v1.0</span></h1>
+            <h1 className="text-3xl font-bold text-indigo-700">My Daily Rhythm <span className="text-xl text-gray-500">- v1.0.2</span></h1>
             <div className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('schedule')}
@@ -2067,7 +2164,7 @@ function App() {
                       <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-gray-300">
                           <h5 className="text-md font-bold text-gray-600 flex items-center mb-1">
                               <FastForward size={18} className="mr-2" /> No Upcoming Activity
-                          </h5>
+                           </h5>
                           <p className="text-sm text-gray-500">Your schedule is clear for now.</p>
                       </div>
                   )}
@@ -3088,37 +3185,58 @@ function App() {
                 <p className="text-sm text-gray-500 mt-4">Changes are saved automatically.</p>
               </div>
 
+              {/* Gemini API Key Setting */}
+              <div className="bg-indigo-50 rounded-lg p-4 mb-6 shadow-inner">
+                <h3 className="text-xl font-semibold text-indigo-700 mb-4">AI Assistant Settings</h3>
+                <div>
+                  <label htmlFor="geminiApiKey" className="block text-sm font-medium text-gray-700">Gemini API Key</label>
+                  <input
+                    type="password" // Use password type for security
+                    id="geminiApiKey"
+                    value={appSettings.geminiApiKey}
+                    onChange={(e) => setAppSettings(prev => ({ ...prev, geminiApiKey: e.target.value }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                    placeholder="Enter your Gemini API Key here"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Your API key is saved locally in your browser and is not sent to any server.
+                    Get your key from <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Google AI Studio</a>.
+                  </p>
+                </div>
+              </div>
+
               {/* Iqamah Times Settings */}
               <div className="bg-indigo-50 rounded-lg p-4 mb-6 shadow-inner">
-                <h3 className="text-xl font-semibold text-indigo-700 mb-4">Iqamah Times Settings</h3>
+                <h3 className="text-xl font-semibold text-indigo-700 mb-4">Iqamah Times Settings (AI Powered)</h3>
                 <div className="space-y-4">
                   <div>
-                    <label htmlFor="iqamahUrl" className="block text-sm font-medium text-gray-700">Auto-fetch URL (JSON format for prayer times)</label>
+                    <label htmlFor="locationCity" className="block text-sm font-medium text-gray-700">City</label>
                     <input
-                      type="url"
-                      id="iqamahUrl"
-                      value={iqamahConfig.url}
-                      onChange={(e) => setIqamahConfig(prev => ({ ...prev, url: e.target.value }))}
+                      type="text"
+                      id="locationCity"
+                      value={appSettings.location.city}
+                      onChange={(e) => setAppSettings(prev => ({ ...prev, location: { ...prev.location, city: e.target.value } }))}
                       className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                      placeholder="e.g., https://api.example.com/prayer-times?date=&#123;YYYY-MM-DD&#125;"
+                      placeholder="e.g., London"
                     />
-                    <p className="text-xs text-gray-500 mt-1">URL should return JSON like: &#123;"fajr": "05:30", "dhuhr": "13:00", "asr": "17:00", "maghrib": "19:30", "isha": "21:00"&#125;</p>
                   </div>
-                  <label className="flex items-center">
+                  <div>
+                    <label htmlFor="locationCountry" className="block text-sm font-medium text-gray-700">Country</label>
                     <input
-                      type="checkbox"
-                      checked={iqamahConfig.autoFetch}
-                      onChange={(e) => setIqamahConfig(prev => ({ ...prev, autoFetch: e.target.checked }))}
-                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                      type="text"
+                      id="locationCountry"
+                      value={appSettings.location.country}
+                      onChange={(e) => setAppSettings(prev => ({ ...prev, location: { ...prev.location, country: e.target.value } }))}
+                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                      placeholder="e.g., UK"
                     />
-                    <span className="ml-2 text-sm text-gray-700">Enable Auto-fetch on App Load</span>
-                  </label>
+                  </div>
                   <button
                     onClick={handleFetchIqamahTimes}
-                    disabled={!iqamahConfig.url}
+                    disabled={!appSettings.geminiApiKey || !appSettings.location.city || !appSettings.location.country}
                     className="px-4 py-2 bg-blue-500 text-white rounded-md shadow-md hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Fetch Iqamah Times Now
+                    Fetch Iqamah Times Now (via AI)
                   </button>
                 </div>
 
