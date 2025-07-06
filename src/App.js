@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit, Plus, Trash2, Save, X, Clock, CheckCircle, AlertCircle, PlayCircle, StopCircle, RefreshCcw, Link, Upload, Download, BellRing, Square, Info } from 'lucide-react'; // Added new icons
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit, Plus, Trash2, Save, X, Clock, CheckCircle, AlertCircle, PlayCircle, StopCircle, RefreshCcw, Link, Upload, Download, BellRing, Square, Info } from 'lucide-react';
 
 // Tailwind CSS is assumed to be available in the environment.
 
-// --- Helper Functions (Moved to a conceptual 'utils/helpers.js' if this were a multi-file project) ---
+// --- Helper Functions ---
 const formatTime = (seconds) => {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
@@ -189,7 +189,6 @@ const generateScheduleForDate = (date, templateType, considerFasting, plannerSch
 
     const dayOfWeek = date.getDay();
     const applicableOverrideBaseIds = new Set(
-        // FIX: Added checks for override and override.recurrenceDays being an array
         (plannerSchedule.overrides.soccerDays || [])
             .filter(override => override && override.recurrenceDays && Array.isArray(override.recurrenceDays) && override.recurrenceDays.includes(dayOfWeek))
             .map(override => override.id)
@@ -211,8 +210,7 @@ const generateScheduleForDate = (date, templateType, considerFasting, plannerSch
             let partCounter = 1;
             while (currentSubStartMinutes < endMinutes) {
                 let subEndMinutes = Math.min(currentSubStartMinutes + MAX_SUB_BLOCK_MINUTES, endMinutes);
-                // FIX: Removed duplicated 'sub' in the condition
-                if (endMinutes - subEndMinutes < 15 && endMinutes - subEndMinutes > 0) {
+                if (endMinutes - subEndMinutes < 15 && endMinutes - subEndMinutes > 0) { // Corrected variable name
                     subEndMinutes = endMinutes;
                 }
                 finalSchedule.push({
@@ -248,7 +246,6 @@ const generateScheduleForDate = (date, templateType, considerFasting, plannerSch
         }
     });
 
-    // FIX: Changed sorting key from plannedEnd to plannedStart for chronological order
     finalSchedule.sort((a, b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart));
 
     return finalSchedule;
@@ -312,6 +309,69 @@ const ActivityReminderModal = ({ activity, onClose }) => {
   );
 };
 
+// --- Toast Notification Component ---
+const Toast = ({ message, type, onClose }) => {
+  const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+  const icon = type === 'success' ? <CheckCircle size={20} /> : type === 'error' ? <AlertCircle size={20} /> : <Info size={20} />;
+
+  return (
+    <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 p-4 rounded-lg shadow-lg text-white flex items-center space-x-3 z-50 ${bgColor}`}>
+      {icon}
+      <span>{message}</span>
+      <button onClick={onClose} className="ml-2 p-1 rounded-full hover:bg-white hover:bg-opacity-20 transition-colors">
+        <X size={16} />
+      </button>
+    </div>
+  );
+};
+
+// --- Error Boundary Component ---
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    // Update state so the next render will show the fallback UI.
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    // You can also log the error to an error reporting service
+    console.error("Uncaught error:", error, errorInfo);
+    this.setState({ error: error, errorInfo: errorInfo });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      // You can render any custom fallback UI
+      return (
+        <div className="fixed inset-0 bg-red-100 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl p-8 text-center max-w-md">
+            <AlertCircle size={64} className="mx-auto text-red-500 mb-4" />
+            <h2 className="text-2xl font-bold text-red-700 mb-2">Something went wrong.</h2>
+            <p className="text-gray-700 mb-4">
+              We're sorry, but an unexpected error occurred. Please try refreshing the page.
+            </p>
+            {this.state.error && (
+              <details className="text-sm text-gray-600 text-left mt-4 p-2 bg-gray-50 rounded-md overflow-auto max-h-48">
+                <summary className="font-semibold cursor-pointer">Error Details</summary>
+                <pre className="whitespace-pre-wrap break-words">
+                  {this.state.error.toString()}
+                  <br />
+                  {this.state.errorInfo?.componentStack}
+                </pre>
+              </details>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function App() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -327,7 +387,7 @@ function App() {
   const [pomodoroSettings, setPomodoroSettings] = useState(() => {
     try {
       const savedSettings = localStorage.getItem('pomodoroSettings');
-      return savedSettings ? JSON.parse(savedSettings) : { work: 25, shortBreak: 5, longBreak: 15, longBreakInterval: 4, reminderTime: 5 }; // Added reminderTime
+      return savedSettings ? JSON.parse(savedSettings) : { work: 25, shortBreak: 5, longBreak: 15, longBreakInterval: 4, reminderTime: 5 };
     } catch (error) {
       console.error("Failed to parse pomodoroSettings from localStorage:", error);
       return { work: 25, shortBreak: 5, longBreak: 15, longBreakInterval: 4, reminderTime: 5 };
@@ -468,6 +528,18 @@ function App() {
 
   // "Now" indicator state
   const [nowIndicatorTop, setNowIndicatorTop] = useState(0);
+
+  const [aiCommandInput, setAiCommandInput] = useState(''); // State for AI input field
+
+  // Toast Notification State and Function
+  const [toast, setToast] = useState(null);
+  const showToast = useCallback((message, type = 'info', duration = 3000) => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(null);
+    }, duration);
+  }, []);
+
 
   // --- Effects for Local Storage ---
   useEffect(() => { localStorage.setItem('activityLogs', JSON.stringify(activityLogs)); }, [activityLogs]);
@@ -785,8 +857,8 @@ function App() {
     const reportSummary = {};
     let totalActualFocusedTime = 0;
     let totalPlannedFocusedTime = 0;
-    let totalActualTimeAllActivities = 0; // NEW
-    let totalPlannedTimeAllActivities = 0; // NEW
+    let totalActualTimeAllActivities = 0;
+    let totalPlannedTimeAllActivities = 0;
 
     dailyLogs.forEach(log => {
       const activity = dailyScheduleState.find(item => item.id === log.activityId);
@@ -804,7 +876,7 @@ function App() {
         if (activity.type === 'academic') {
           totalActualFocusedTime += actualDurationHours;
         }
-        totalActualTimeAllActivities += actualDurationHours; // NEW
+        totalActualTimeAllActivities += actualDurationHours;
       }
     });
 
@@ -818,15 +890,15 @@ function App() {
         if (activity.type === 'academic') {
             totalPlannedFocusedTime += plannedDurationHours;
         }
-        totalPlannedTimeAllActivities += plannedDurationHours; // NEW
+        totalPlannedTimeAllActivities += plannedDurationHours;
     });
 
     return {
       summary: reportSummary,
       totalFocused: totalActualFocusedTime,
       totalPlannedFocusedTime,
-      totalActualTimeAllActivities, // NEW
-      totalPlannedTimeAllActivities, // NEW
+      totalActualTimeAllActivities,
+      totalPlannedTimeAllActivities,
     };
   }, [activityLogs, reportDate, dailyScheduleState, currentDate, subTaskDetails]);
 
@@ -1029,7 +1101,7 @@ function App() {
     const dateKey = formatDateToYYYYMMDD(selectedPlannerDate);
     const generatedSchedule = generateScheduleForDate(selectedPlannerDate, selectedBaseTemplate, true, plannerSchedule, dailyCustomSchedules, fastingDates);
     setDailyCustomSchedules(prev => ({ ...prev, [dateKey]: generatedSchedule }));
-    alert(`Template '${selectedBaseTemplate}' applied to ${selectedPlannerDate.toLocaleDateString()}!`);
+    showToast(`Template '${selectedBaseTemplate}' applied to ${selectedPlannerDate.toLocaleDateString()}!`, 'success');
   };
 
   const handleCancelEdit = () => {
@@ -1141,10 +1213,11 @@ function App() {
         updatedLogs[existingLogIndex].linkedSubtaskId = selectedSubtaskId;
         return updatedLogs;
       } else {
-        return [...prevLogs, {
+        const newLog = {
           id: crypto.randomUUID(), date: dateStr, activityId: selectedActivityId,
           actualStart: null, actualEnd: null, linkedTaskId: selectedTaskId, linkedSubtaskId: selectedSubtaskId,
-        }];
+        };
+        return [...prevLogs, newLog];
       }
     });
 
@@ -1274,7 +1347,7 @@ function App() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    alert('Selected data exported successfully!');
+    showToast('Selected data exported successfully!', 'success');
   };
 
   const handleImportData = (event) => {
@@ -1302,11 +1375,11 @@ function App() {
           if (importedCount === 0 && skippedCount === 0) { message = "No data categories were selected for import or found in the file."; }
           else if (importedCount > 0) { message += "\nData imported successfully!"; }
           else { message += "\nNo data was imported."; }
-          alert(message);
+          showToast(message, 'info');
 
         } catch (error) {
           console.error("Error importing data:", error);
-          alert('Failed to import data. Please ensure the file is a valid JSON.');
+          showToast('Failed to import data. Please ensure the file is a valid JSON.', 'error');
         }
         event.target.value = '';
         setShowConfirmationModal(false);
@@ -1460,1762 +1533,2026 @@ function App() {
     setDailyScheduleState(generateScheduleForDate(currentDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates));
   }, [currentDate, plannerSchedule, dailyCustomSchedules, fastingDates]);
 
+  // --- AI Schedule Refinement Function (Integrated) ---
+  const refineScheduleWithAI = useCallback(async (userInput) => {
+    if (!userInput.trim()) {
+        showToast("Please enter a command for the AI assistant.", "error");
+        return;
+    }
+
+    showToast("Processing AI command...", "info");
+
+    const responseSchema = {
+      type: "OBJECT",
+      properties: {
+        action: { type: "STRING", enum: ["modify_activity", "shift_activities", "add_activity", "delete_activity"] },
+        activityName: { type: "STRING", description: "Name or part of the activity to target" },
+        targetDate: { type: "STRING", description: "Date for the change (e.g., 'today', 'tomorrow', 'YYYY-MM-DD')" },
+        newPlannedStart: { type: "STRING", description: "New start time in HH:MM format (optional)" },
+        newPlannedEnd: { type: "STRING", description: "New end time in HH:MM format (optional)" },
+        durationChangeMinutes: { type: "NUMBER", description: "Change in duration in minutes (e.g., 15 for +15m, -30 for -30m)" },
+        shiftMinutes: { type: "NUMBER", description: "Amount to shift activities in minutes (e.g., 30 for +30m, -15 for -15m)" },
+        activityTypeFilter: { type: "STRING", enum: ["personal", "academic", "spiritual", "physical", "work", "project"], description: "Filter activities by type for shifts (optional)" },
+      },
+      required: ["action"]
+    };
+
+    const chatHistory = [];
+    chatHistory.push({ role: "user", parts: [{ text: `Parse this schedule modification request into JSON: "${userInput}". Be precise with activity names and times. If a time is not specified, do not include it. Infer 'today' if no date is given. If duration is changed, calculate newPlannedEnd based on newPlannedStart. If an activity name is not clear, suggest options. Use the current date as ${formatDateToYYYYMMDD(selectedPlannerDate)} for 'today'.` }] });
+
+    const payload = {
+      contents: chatHistory,
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema
+      }
+    };
+
+    const apiKey = ""; // Canvas will automatically provide this at runtime
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await response.json();
+
+      if (result.candidates && result.candidates.length > 0 &&
+          result.candidates[0].content && result.candidates[0].content.parts &&
+          result.candidates[0].content.parts.length > 0) {
+        const jsonString = result.candidates[0].content.parts[0].text;
+        const parsedCommand = JSON.parse(jsonString);
+        console.log("AI Parsed Command:", parsedCommand);
+
+        const targetDateObj = parsedCommand.targetDate === 'today' ? selectedPlannerDate :
+                              parsedCommand.targetDate === 'tomorrow' ? new Date(selectedPlannerDate.getTime() + 24 * 60 * 60 * 1000) :
+                              parsedCommand.targetDate ? new Date(parsedCommand.targetDate) : selectedPlannerDate;
+        const dateKey = formatDateToYYYYMMDD(targetDateObj);
+
+        setDailyCustomSchedules(prevDailySchedules => {
+          const currentDayActivities = prevDailySchedules[dateKey] ? [...prevDailySchedules[dateKey]] :
+                                       generateScheduleForDate(targetDateObj, null, true, plannerSchedule, prevDailySchedules, fastingDates);
+          let updatedDayActivities = [...currentDayActivities];
+          let changesApplied = false;
+          let conflictDetected = false;
+
+          const checkOverlap = (activityToCheck, currentActivities) => {
+            const start1 = timeToMinutes(activityToCheck.plannedStart);
+            let end1 = timeToMinutes(activityToCheck.plannedEnd);
+            if (end1 < start1) end1 += 1440;
+
+            for (const existingActivity of currentActivities) {
+              if (existingActivity.id === activityToCheck.id) continue; // Don't check against itself
+
+              const start2 = timeToMinutes(existingActivity.plannedStart);
+              let end2 = timeToMinutes(existingActivity.plannedEnd);
+              if (end2 < start2) end2 += 1440;
+
+              // Check for overlap
+              if (Math.max(start1, start2) < Math.min(end1, end2)) {
+                if (existingActivity.constraintType === 'hard' || activityToCheck.constraintType === 'hard') {
+                  return true; // Conflict with a hard constraint
+                }
+              }
+            }
+            return false;
+          };
+
+
+          if (parsedCommand.action === 'modify_activity') {
+            const activityIndex = updatedDayActivities.findIndex(act => act.activity.toLowerCase().includes(parsedCommand.activityName.toLowerCase()));
+            if (activityIndex > -1) {
+              const originalActivity = { ...updatedDayActivities[activityIndex] };
+              let newStart = parsedCommand.newPlannedStart || originalActivity.plannedStart;
+              let newEnd = parsedCommand.newPlannedEnd || originalActivity.plannedEnd;
+
+              if (parsedCommand.durationChangeMinutes !== undefined) {
+                const currentStartMinutes = timeToMinutes(newStart);
+                let newEndMinutes = currentStartMinutes + parsedCommand.durationChangeMinutes;
+                newEnd = minutesToTime(newEndMinutes);
+              }
+
+              const potentialActivity = { ...originalActivity, plannedStart: newStart, plannedEnd: newEnd };
+
+              if (checkOverlap(potentialActivity, updatedDayActivities.filter((_, idx) => idx !== activityIndex))) {
+                showToast(`Conflict detected: Cannot modify "${originalActivity.activity}" due to overlap with a hard constraint activity.`, 'error', 5000);
+                conflictDetected = true;
+              } else {
+                updatedDayActivities[activityIndex] = potentialActivity;
+                changesApplied = true;
+                showToast(`Activity "${originalActivity.activity}" modified.`, 'success');
+              }
+            } else {
+              showToast(`Activity "${parsedCommand.activityName}" not found for modification.`, 'error');
+            }
+          } else if (parsedCommand.action === 'shift_activities') {
+            const shiftMinutes = parsedCommand.shiftMinutes || 0;
+            if (shiftMinutes === 0) {
+                showToast("No shift amount specified.", "error");
+                return prevDailySchedules;
+            }
+            const activitiesToShift = updatedDayActivities.filter(act =>
+              (!parsedCommand.activityTypeFilter || act.type === parsedCommand.activityTypeFilter) &&
+              act.constraintType !== 'hard' // Don't shift hard constraint activities
+            );
+
+            let allShiftsPossible = true;
+            let tempUpdatedActivities = JSON.parse(JSON.stringify(updatedDayActivities)); // Work on a deep copy for pre-check
+
+            for (const activity of activitiesToShift) {
+                const originalStartMinutes = timeToMinutes(activity.plannedStart);
+                let originalEndMinutes = timeToMinutes(activity.plannedEnd);
+                if (originalEndMinutes < originalStartMinutes) originalEndMinutes += 1440;
+
+                let newStartMinutes = originalStartMinutes + shiftMinutes;
+                let newEndMinutes = originalEndMinutes + shiftMinutes;
+
+                // Handle wrap around for new times
+                if (newStartMinutes < 0) { newStartMinutes += 1440; newEndMinutes += 1440; }
+                else if (newStartMinutes >= 1440) { newStartMinutes -= 1440; newEndMinutes -= 1440; }
+
+                const potentialActivity = { ...activity, plannedStart: minutesToTime(newStartMinutes), plannedEnd: minutesToTime(newEndMinutes) };
+
+                // Temporarily update the activity in tempUpdatedActivities for collision check
+                const tempIndex = tempUpdatedActivities.findIndex(a => a.id === activity.id);
+                if (tempIndex > -1) {
+                    const originalTemp = tempUpdatedActivities[tempIndex];
+                    tempUpdatedActivities[tempIndex] = potentialActivity;
+                    if (checkOverlap(potentialActivity, tempUpdatedActivities.filter(a => a.id !== activity.id))) {
+                        showToast(`Conflict detected: Cannot shift "${activity.activity}" due to overlap with a hard constraint activity. Skipping all shifts.`, 'error', 5000);
+                        allShiftsPossible = false;
+                        break; // Stop if any conflict is found
+                    }
+                    tempUpdatedActivities[tempIndex] = originalTemp; // Revert for next check
+                }
+            }
+
+            if (allShiftsPossible) {
+                updatedDayActivities = updatedDayActivities.map(activity => {
+                    if ((!parsedCommand.activityTypeFilter || activity.type === parsedCommand.activityTypeFilter) && activity.constraintType !== 'hard') {
+                        const originalStartMinutes = timeToMinutes(activity.plannedStart);
+                        let originalEndMinutes = timeToMinutes(activity.plannedEnd);
+                        if (originalEndMinutes < originalStartMinutes) originalEndMinutes += 1440;
+
+                        let newStartMinutes = originalStartMinutes + shiftMinutes;
+                        let newEndMinutes = originalEndMinutes + shiftMinutes;
+
+                        if (newStartMinutes < 0) { newStartMinutes += 1440; newEndMinutes += 1440; }
+                        else if (newStartMinutes >= 1440) { newStartMinutes -= 1440; newEndMinutes -= 1440; }
+
+                        changesApplied = true;
+                        return { ...activity, plannedStart: minutesToTime(newStartMinutes), plannedEnd: minutesToTime(newEndMinutes) };
+                    }
+                    return activity;
+                });
+                if (changesApplied) {
+                    showToast(`Activities shifted by ${shiftMinutes} minutes.`, 'success');
+                } else {
+                    showToast("No adjustable activities found to shift, or no shift applied.", "info");
+                }
+            } else {
+                conflictDetected = true;
+            }
+
+          } else if (parsedCommand.action === 'add_activity') {
+            const newActivity = {
+              id: crypto.randomUUID(),
+              activity: parsedCommand.activityName || 'New Activity',
+              plannedStart: parsedCommand.newPlannedStart || '09:00',
+              plannedEnd: parsedCommand.newPlannedEnd || '10:00',
+              type: parsedCommand.activityTypeFilter || 'personal',
+              recurrenceType: 'none', // AI adds to daily, so no recurrence
+              recurrenceDays: [],
+              constraintType: 'adjustable', // Default for AI added
+            };
+
+            if (checkOverlap(newActivity, updatedDayActivities)) {
+              showToast(`Conflict detected: Cannot add "${newActivity.activity}" due to overlap with a hard constraint activity.`, 'error', 5000);
+              conflictDetected = true;
+            } else {
+              updatedDayActivities.push(newActivity);
+              changesApplied = true;
+              showToast(`Activity "${newActivity.activity}" added.`, 'success');
+            }
+          } else if (parsedCommand.action === 'delete_activity') {
+            const initialLength = updatedDayActivities.length;
+            updatedDayActivities = updatedDayActivities.filter(act => !act.activity.toLowerCase().includes(parsedCommand.activityName.toLowerCase()));
+            if (updatedDayActivities.length < initialLength) {
+              changesApplied = true;
+              showToast(`Activity "${parsedCommand.activityName}" deleted.`, 'success');
+            } else {
+              showToast(`Activity "${parsedCommand.activityName}" not found for deletion.`, 'error');
+            }
+          } else {
+            showToast("AI command not recognized or supported.", "error");
+          }
+
+          if (changesApplied && !conflictDetected) {
+            // Sort after changes to maintain order
+            updatedDayActivities.sort((a, b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart));
+            return { ...prevDailySchedules, [dateKey]: updatedDayActivities };
+          }
+          return prevDailySchedules; // No changes applied or conflict
+        });
+
+      } else {
+        console.error("AI response structure unexpected:", result);
+        showToast("AI could not understand the command. Please try rephrasing.", "error");
+      }
+    } catch (error) {
+      console.error("Error calling Gemini API:", error);
+      showToast("Error communicating with AI. Please try again later.", "error");
+    }
+  }, [selectedPlannerDate, dailyCustomSchedules, plannerSchedule, fastingDates, showToast]);
+
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 font-inter text-gray-800 flex flex-col items-center">
-      <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
-        {/* Header and Tabs */}
-        <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-          <h1 className="text-3xl font-bold text-indigo-700">My Daily Rhythm</h1>
-          <div className="flex space-x-2">
-            <button
-              onClick={() => setActiveTab('schedule')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                activeTab === 'schedule' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              <CalendarDays className="inline-block mr-2" size={18} /> Schedule
-            </button>
-            <button
-              onClick={() => setActiveTab('day-planner')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                activeTab === 'day-planner' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              <Plus className="inline-block mr-2" size={18} /> Day Planner
-            </button>
-            <button
-              onClick={() => setActiveTab('tasks')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                activeTab === 'tasks' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              <BarChart2 className="inline-block mr-2" size={18} /> Tasks
-            </button>
-            <button
-              onClick={() => setActiveTab('report')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                activeTab === 'report' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              <BarChart2 className="inline-block mr-2" size={18} /> Report
-            </button>
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                activeTab === 'settings' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              <Settings className="inline-block mr-2" size={18} /> Settings
-            </button>
-          </div>
-        </div>
-
-        {/* Conditional rendering for tabs */}
-        {activeTab === 'schedule' && (
-          <div className="flex flex-col flex-grow">
-            {/* Date Navigation */}
-            <div className="flex justify-between items-center mb-4 flex-shrink-0">
+    <ErrorBoundary>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 font-inter text-gray-800 flex flex-col items-center">
+        <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
+          {/* Header and Tabs */}
+          <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
+            <h1 className="text-3xl font-bold text-indigo-700">My Daily Rhythm</h1>
+            <div className="flex space-x-2">
               <button
-                onClick={() => navigateDate(-1)}
-                className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
+                onClick={() => setActiveTab('schedule')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                  activeTab === 'schedule' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
               >
-                <ChevronLeft size={20} />
+                <CalendarDays className="inline-block mr-2" size={18} /> Schedule
               </button>
-              <h2 className="text-2xl font-semibold text-indigo-800">
-                {currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-              </h2>
               <button
-                onClick={() => navigateDate(1)}
-                className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
+                onClick={() => setActiveTab('day-planner')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                  activeTab === 'day-planner' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
               >
-                <ChevronRight size={20} />
+                <Plus className="inline-block mr-2" size={18} /> Day Planner
+              </button>
+              <button
+                onClick={() => setActiveTab('tasks')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                  activeTab === 'tasks' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                <BarChart2 className="inline-block mr-2" size={18} /> Tasks
+              </button>
+              <button
+                onClick={() => setActiveTab('report')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                  activeTab === 'report' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                <BarChart2 className="inline-block mr-2" size={18} /> Report
+              </button>
+              <button
+                onClick={() => setActiveTab('settings')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                  activeTab === 'settings' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                <Settings className="inline-block mr-2" size={18} /> Settings
               </button>
             </div>
-
-            {/* Prominent Current/Next Activities */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                {currentOngoingTask ? (
-                    <div
-                        onClick={() => scrollToActivity(currentOngoingTask.id)}
-                        className="bg-white p-4 rounded-lg shadow-lg border-l-4 border-blue-500 cursor-pointer hover:bg-blue-50 transition-colors duration-200"
-                        role="button" tabIndex="0" aria-label={`Scroll to current activity: ${currentOngoingTask.activity}`}
-                    >
-                        <h5 className="text-md font-bold text-blue-700 flex items-center mb-1">
-                            <PlayCircle size={18} className="mr-2" /> Current Activity
-                        </h5>
-                        <p className="text-lg font-semibold text-gray-800">{currentOngoingTask.activity}</p>
-                        <p className="text-sm text-gray-600">{currentOngoingTask.plannedStart} - {currentOngoingTask.plannedEnd}</p>
-                        {getAssignedTaskInfo(currentOngoingTask.id) && (
-                            <p className="text-xs text-gray-500 mt-1">
-                                Working on: {getAssignedTaskInfo(currentOngoingTask.id).taskName}
-                                {getAssignedTaskInfo(currentOngoingTask.id).subtaskName && ` - ${getAssignedTaskInfo(currentOngoingTask.id).subtaskName}`}
-                            </p>
-                        )}
-                        {getLogForActivity(currentOngoingTask.id)?.actualStart && !getLogForActivity(currentOngoingTask.id)?.actualEnd && (
-                            <div className="w-full bg-gray-200 rounded-full h-1 mt-2">
-                                <div className="bg-blue-400 h-1 rounded-full" style={{ width: `${getProgressBarPercentage(currentOngoingTask.id)}%` }}></div>
-                            </div>
-                        )}
-                    </div>
-                ) : (
-                    <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-gray-300">
-                        <h5 className="text-md font-bold text-gray-600 flex items-center mb-1">
-                            <Clock size={18} className="mr-2" /> No Current Activity
-                        </h5>
-                        <p className="text-sm text-gray-500">Start an activity from the schedule below.</p>
-                    </div>
-                )}
-
-                {nextTask ? (
-                    <div
-                        onClick={() => scrollToActivity(nextTask.id)}
-                        className="bg-white p-4 rounded-lg shadow-lg border-l-4 border-indigo-500 cursor-pointer hover:bg-indigo-50 transition-colors duration-200"
-                        role="button" tabIndex="0" aria-label={`Scroll to next scheduled activity: ${nextTask.activity}`}
-                    >
-                        <h5 className="text-md font-bold text-indigo-700 flex items-center mb-1">
-                            <FastForward size={18} className="mr-2" /> Next Scheduled Activity
-                        </h5>
-                        <p className="text-lg font-semibold text-gray-800">{nextTask.activity}</p>
-                        <p className="text-sm text-gray-600">{nextTask.plannedStart} - {nextTask.plannedEnd}</p>
-                    </div>
-                ) : (
-                    <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-gray-300">
-                        <h5 className="text-md font-bold text-gray-600 flex items-center mb-1">
-                            <FastForward size={18} className="mr-2" /> No Upcoming Activity
-                        </h5>
-                        <p className="text-sm text-gray-500">Your schedule is clear for now.</p>
-                    </div>
-                )}
-
-                {nextPrayer ? (
-                    <div
-                        onClick={() => scrollToActivity(nextPrayer.id)}
-                        className="bg-white p-4 rounded-lg shadow-lg border-l-4 border-green-500 cursor-pointer hover:bg-green-50 transition-colors duration-200"
-                        role="button" tabIndex="0" aria-label={`Scroll to next prayer: ${nextPrayer.activity}`}
-                    >
-                        <h5 className="text-md font-bold text-green-700 flex items-center mb-1">
-                            <BellRing size={18} className="mr-2" /> Next Prayer
-                        </h5>
-                        <p className="text-lg font-semibold text-gray-800">{nextPrayer.activity}</p>
-                        <p className="text-sm text-gray-600">{nextPrayer.plannedStart} - {nextPrayer.plannedEnd}</p>
-                    </div>
-                ) : (
-                    <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-gray-300">
-                        <h5 className="text-md font-bold text-gray-600 flex items-center mb-1">
-                            <BellRing size={18} className="mr-2" /> No Upcoming Prayer
-                        </h5>
-                        <p className="text-sm text-gray-500">All prayers for today are complete or not yet scheduled.</p>
-                    </div>
-                )}
-            </div>
-
-            {/* Pomodoro Timer Dashboard */}
-            <div className={`rounded-lg p-6 mb-6 text-center shadow-lg flex-shrink-0 transition-colors duration-300
-              ${pomodoroTimer.mode === 'work' ? 'bg-green-100 border-2 border-green-300' :
-                pomodoroTimer.mode === 'short_break' ? 'bg-blue-100 border-2 border-blue-300' :
-                pomodoroTimer.mode === 'long_break' ? 'bg-purple-100 border-2 border-purple-300' : 'bg-indigo-50 border-2 border-indigo-200'
-              }`}
-            >
-              <h3 className="text-2xl font-bold text-indigo-800 mb-4">Pomodoro Dashboard</h3>
-
-              {/* Main Timer Display */}
-              <div className="relative w-48 h-48 mx-auto mb-6 flex items-center justify-center rounded-full bg-white shadow-inner">
-                <div className="absolute inset-0 flex items-center justify-center text-6xl font-extrabold text-gray-900">
-                  {formatTime(pomodoroTimer.timeLeft)}
-                </div>
-                <div className="absolute inset-0 rounded-full border-8 border-gray-200"></div>
-                <div className={`absolute inset-0 rounded-full border-8
-                  ${pomodoroTimer.mode === 'work' ? 'border-green-500' :
-                    pomodoroTimer.mode === 'short_break' ? 'border-blue-500' :
-                    pomodoroTimer.mode === 'long_break' ? 'border-purple-500' : 'border-transparent'
-                  }`}
-                  style={{
-                    clipPath: `polygon(50% 0%, 50% 50%, ${50 + 50 * Math.sin(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / ((pomodoroTimer.mode === 'work' ? pomodoroSettings.work : (pomodoroTimer.mode === 'short_break' ? pomodoroSettings.shortBreak : pomodoroSettings.longBreak)) * 60))))}% ${50 - 50 * Math.cos(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / ((pomodoroTimer.mode === 'work' ? pomodoroSettings.work : (pomodoroTimer.mode === 'short_break' ? pomodoroSettings.shortBreak : pomodoroSettings.longBreak)) * 60))))}%)`
-                  }}
-                ></div>
-              </div>
-
-              {/* Pomodoro Status and Linked Activity */}
-              <p className={`text-xl mb-4 capitalize font-semibold flex items-center justify-center
-                ${pomodoroTimer.mode === 'work' ? 'text-green-700' :
-                  pomodoroTimer.mode === 'short_break' ? 'text-blue-700' :
-                  pomodoroTimer.mode === 'long_break' ? 'text-purple-700' : 'text-gray-600'
-                }`}>
-                {pomodoroTimer.mode.replace('_', ' ')} Session
-              </p>
-              {pomodoroTimer.linkedActivityId && (
-                <p className="text-sm text-gray-700 mb-2">
-                  Linked to: <span className="font-bold">
-                    {dailyScheduleState.find(a => a.id === pomodoroTimer.linkedActivityId)?.activity || 'N/A'}
-                  </span>
-                </p>
-              )}
-              {getAssignedTaskInfo(pomodoroTimer.linkedActivityId || currentPomodoroBlockId) && (
-                <p className="text-sm text-gray-700 mb-2">
-                  Working on: <span className="font-bold">
-                    {getAssignedTaskInfo(pomodoroTimer.linkedActivityId || currentPomodoroBlockId).taskName}
-                    {getAssignedTaskInfo(pomodoroTimer.linkedActivityId || currentPomodoroBlockId).subtaskName && ` - ${getAssignedTaskInfo(pomodoroTimer.linkedActivityId || currentPomodoroBlockId).subtaskName}`}
-                  </span>
-                </p>
-              )}
-              <p className="text-sm text-gray-500 mt-2">Pomodoros Completed: {pomodoroTimer.pomodorosCompleted}</p>
-
-              {/* Main Controls */}
-              <div className="flex justify-center space-x-4 mt-6">
-                <button
-                  onClick={() => startPomodoroSession('work', pomodoroSettings.work, currentActivityId)}
-                  disabled={pomodoroTimer.running}
-                  className="px-4 py-2 rounded-full bg-green-500 text-white shadow-md hover:bg-green-600 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                  aria-label="Start Pomodoro Work Session"
-                >
-                  <Play size={20} className="mr-2" />
-                  {currentActivityId && dailyScheduleState.find(a => a.id === currentActivityId)?.type === 'academic'
-                    ? `Start Pomodoro for ${dailyScheduleState.find(a => a.id === currentActivityId)?.activity}`
-                    : 'Start Work'}
-                </button>
-                <button
-                  onClick={pausePomodoro}
-                  disabled={!pomodoroTimer.running}
-                  className="px-4 py-2 rounded-full bg-yellow-500 text-white shadow-md hover:bg-yellow-600 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                  aria-label="Pause Pomodoro"
-                >
-                  <Pause size={20} className="mr-2" /> Pause
-                </button>
-                <button
-                  onClick={resetPomodoro}
-                  className="px-4 py-2 rounded-full bg-red-500 text-white shadow-md hover:bg-red-600 transition-colors duration-200 flex items-center"
-                  aria-label="Reset Pomodoro"
-                >
-                  <RotateCcw size={20} className="mr-2" /> Reset
-                </button>
-              </div>
-
-              {/* Manual Break Controls */}
-              <div className="mt-4 flex justify-center space-x-2">
-                <button
-                  onClick={() => startPomodoroSession('short_break', pomodoroSettings.shortBreak)}
-                  className="px-3 py-1 bg-blue-500 text-white rounded-md text-sm shadow-md hover:bg-blue-600 transition-colors duration-200"
-                  aria-label="Start Short Break"
-                >
-                  <Square size={14} className="inline-block mr-1" /> Short Break ({pomodoroSettings.shortBreak}m)
-                </button>
-                <button
-                  onClick={() => startPomodoroSession('long_break', pomodoroSettings.longBreak)}
-                  className="px-3 py-1 bg-purple-500 text-white rounded-md text-sm shadow-md hover:bg-purple-600 transition-colors duration-200"
-                  aria-label="Start Long Break"
-                >
-                  <Square size={14} className="inline-block mr-1" /> Long Break ({pomodoroSettings.longBreak}m)
-                </button>
-              </div>
-
-              {/* Audio Enable Button */}
-              {!audioEnabled && (
-                <button
-                  onClick={handleEnableAudio}
-                  className="mt-6 px-4 py-2 bg-purple-500 text-white rounded-md shadow-md hover:bg-purple-600 transition-colors duration-200 flex items-center justify-center mx-auto"
-                >
-                  <BellRing size={20} className="mr-2" /> Enable Sounds
-                </button>
-              )}
-              {audioEnabled && (
-                <p className="mt-6 text-sm text-green-700 flex items-center justify-center">
-                  <BellRing size={16} className="mr-1" /> Sounds Enabled
-                </p>
-              )}
-            </div>
-
-            {/* Daily Insights */}
-            <div className="mb-6">
-                <h4 className="text-xl font-semibold text-indigo-700 mb-4">Daily Insights</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left mb-6">
-                  <div className="bg-white p-4 rounded-lg shadow-sm">
-                    <p className="text-sm text-gray-600">
-                      Focused Work: <span className="font-bold">{(reportData.totalFocused || 0).toFixed(2)} / {(reportData.totalPlannedFocusedTime || 0).toFixed(2)} hrs</span>
-                    </p>
-                    <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
-                        <div className="bg-blue-500 h-2 rounded-full" style={{width: `${((reportData.totalFocused || 0) / Math.max((reportData.totalPlannedFocusedTime || 0), 1)) * 100}%`}}></div>
-                    </div>
-                  </div>
-                  <div className="bg-white p-4 rounded-lg shadow-sm">
-                    <p className="text-sm text-gray-600">
-                      Total Activities: <span className="font-bold">{(reportData.totalActualTimeAllActivities || 0).toFixed(2)} / {(reportData.totalPlannedTimeAllActivities || 0).toFixed(2)} hrs</span>
-                    </p>
-                     <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
-                        <div className="bg-green-500 h-2 rounded-full" style={{width: `${((reportData.totalActualTimeAllActivities || 0) / Math.max((reportData.totalPlannedTimeAllActivities || 0), 1)) * 100}%`}}></div>
-                    </div>
-                  </div>
-                </div>
-            </div>
-
-            {/* Scrollable Schedule Table */}
-            <div className="overflow-y-auto flex-grow relative" ref={scheduleTableRef}>
-              {/* "Now" Indicator Line */}
-              <div
-                className="absolute left-0 right-0 h-0.5 bg-red-500 z-20 transition-all duration-1000 ease-linear"
-                style={{ top: `${nowIndicatorTop}px` }}
-              >
-                <div className="absolute -left-1.5 -top-1.5 w-3 h-3 rounded-full bg-red-500 border-2 border-white"></div>
-                <span className="absolute left-4 -top-2 text-xs text-red-700 font-bold">Now</span>
-              </div>
-
-              <table className="min-w-full bg-white rounded-lg shadow-md">
-                {/* Ref for thead to calculate "Now" line offset */}
-                <thead className="bg-indigo-100 sticky top-0 z-10" ref={theadRef}>
-                  <tr>
-                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tl-lg">Activity</th>
-                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Planned</th>
-                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual Start</th>
-                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual End</th>
-                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual Duration</th>
-                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tr-lg">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {timeOfDayOrder.map(groupName => {
-                    const activitiesInGroup = groupedSchedule[groupName];
-                    if (!activitiesInGroup || activitiesInGroup.length === 0) return null;
-
-                    const isCollapsed = collapsedSections[groupName];
-
-                    return (
-                      <React.Fragment key={groupName}>
-                        <tr className="bg-indigo-200 sticky top-12 z-10">
-                          <td colSpan="6" className="py-2 px-4 text-left text-md font-bold text-indigo-800 cursor-pointer" onClick={() => toggleSection(groupName)}>
-                            {groupName.replace('-', ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-                            <span className="ml-2">{isCollapsed ? '▼' : '▲'}</span>
-                          </td>
-                        </tr>
-                        {!isCollapsed && activitiesInGroup.map((activity) => {
-                          const log = getLogForActivity(activity.id);
-                          const assignedTaskInfo = getAssignedTaskInfo(activity.id);
-                          const actualDuration = getActualDuration(log);
-                          const progressBarPercentage = getProgressBarPercentage(activity.id);
-                          const isSubdividedBlock = (activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && activity.id.includes('-part');
-                          const currentActivityNotes = subTaskDetails[activity.id] || '';
-                          const timeGroup = getTimeOfDayGroup(activity.plannedStart);
-                          const activityNameLower = activity.activity.toLowerCase();
-                          const isPrayerBlock = activityNameLower.includes('iqamah & prayer') || activityNameLower.includes('prayer');
-
-                          let status = '';
-                          let statusIcon = null;
-                          const now = new Date();
-                          const plannedStart = parseTime(activity.plannedStart, currentDate);
-                          const plannedEnd = parseTime(activity.plannedEnd, currentDate);
-                          let activityEndToday = new Date(plannedEnd);
-                          if (plannedEnd < plannedStart) {
-                            activityEndToday.setDate(activityEndToday.getDate() + 1);
-                          }
-
-                          let statusColor = '';
-                          if (log?.actualEnd) {
-                            status = 'Completed'; statusIcon = <CheckCircle size={14} className="inline-block mr-1" />; statusColor = 'text-green-600';
-                          } else if (log?.actualStart && !log?.actualEnd) {
-                            status = 'Started'; statusIcon = <PlayCircle size={14} className="inline-block mr-1" />; statusColor = 'text-blue-600';
-                          } else if (now > activityEndToday && !log?.actualEnd) {
-                            status = 'Overdue'; statusIcon = <AlertCircle size={14} className="inline-block mr-1" />; statusColor = 'text-red-600';
-                          } else {
-                            status = 'Scheduled'; statusIcon = <Clock size={14} className="inline-block mr-1" />; statusColor = 'text-gray-500';
-                          }
-
-                          return (
-                            <tr
-                              key={activity.id}
-                              ref={el => activityRefs.current.set(activity.id, el)}
-                              className={`border-b border-gray-200 hover:bg-gray-50 relative
-                                ${activity.id === currentActivityId ? 'bg-indigo-100 border-l-4 border-indigo-600' : ''}
-                                ${isPrayerBlock
-                                  ? 'bg-green-50'
-                                  : (
-                                    timeGroup === 'night' ? 'bg-gray-100' :
-                                    timeGroup === 'early-morning' ? 'bg-sky-50' :
-                                    timeGroup === 'midday' ? 'bg-amber-50' :
-                                    timeGroup === 'afternoon' ? 'bg-teal-50' :
-                                    timeGroup === 'evening' ? 'bg-purple-50' : ''
-                                  )
-                                }
-                              `}
-                            >
-                              <td className="py-3 px-4 text-sm font-medium text-gray-700">
-                                <span className={`${isPrayerBlock ? 'font-bold' : ''}`}>
-                                  {activity.activity}
-                                </span>
-                                <span className="block text-xs text-gray-500">
-                                  {activity.plannedStart} - {activity.plannedEnd}
-                                </span>
-                                <span className={`block text-xs font-semibold ${statusColor}`}>
-                                  {statusIcon} {status}
-                                </span>
-                                {(isSubdividedBlock || assignedTaskInfo) && (
-                                  <div className="flex items-center text-xs text-gray-600 mt-1">
-                                    <span className="mr-1 text-indigo-500"><Edit size={12} /></span>
-                                    {assignedTaskInfo ? (
-                                      <span className="italic text-indigo-700">
-                                        {assignedTaskInfo.taskName}
-                                        {assignedTaskInfo.subtaskName && ` - ${assignedTaskInfo.subtaskName}`}
-                                      </span>
-                                    ) : editingSubTaskId === activity.id ? (
-                                      <input
-                                        type="text"
-                                        value={currentActivityNotes}
-                                        onChange={(e) => handleActivityNotesChange(activity.id, e.target.value)}
-                                        onBlur={() => handleActivityNotesBlur(activity.id)}
-                                        onKeyDown={(e) => handleActivityNotesKeyDown(e, activity.id)}
-                                        className="border-b border-indigo-400 focus:outline-none focus:border-indigo-600 text-sm bg-transparent w-full"
-                                        autoFocus
-                                        aria-label={`Edit activity notes for ${activity.activity}`}
-                                      />
-                                    ) : (
-                                      <span
-                                        onClick={() => setEditingSubTaskId(activity.id)}
-                                        className="cursor-pointer hover:text-indigo-700 italic"
-                                        role="button" tabIndex="0" aria-label={`Add or edit activity notes for ${activity.activity}`}
-                                      >
-                                        {currentActivityNotes || 'Click to add activity notes'}
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                                {log?.actualStart && !log?.actualEnd && progressBarPercentage > 0 && (
-                                  <div className="absolute bottom-0 left-0 h-1 bg-green-400 rounded-full"
-                                       style={{ width: `${progressBarPercentage}%` }}></div>
-                                )}
-                              </td>
-                              <td className="py-3 px-4 text-sm text-gray-600">
-                                {getPlannedDuration(activity.plannedStart, activity.plannedEnd, currentDate).toFixed(2)} hrs
-                              </td>
-                              <td className="py-3 px-4 text-sm text-gray-600">
-                                {formatDateTime(log?.actualStart)}
-                              </td>
-                              <td className="py-3 px-4 text-sm text-gray-600">
-                                {formatDateTime(log?.actualEnd)}
-                              </td>
-                              <td className="py-3 px-4 text-sm text-gray-600">{actualDuration > 0 ? `${actualDuration.toFixed(2)} hrs` : '-'}</td>
-                              <td className="py-3 px-4 text-sm">
-                                <div className="flex space-x-2">
-                                  {!log?.actualStart && (
-                                    <button
-                                      onClick={() => logTime(activity.id, 'start')}
-                                      className="px-3 py-1 bg-blue-500 text-white rounded-md text-xs font-medium hover:bg-blue-600 transition-colors duration-200"
-                                      aria-label={`Start ${activity.activity}`}
-                                    >
-                                      <Play size={14} className="inline-block mr-1" /> Start
-                                    </button>
-                                  )}
-                                  {log?.actualStart && !log?.actualEnd && (
-                                    <button
-                                      onClick={() => logTime(activity.id, 'end')}
-                                      className="px-3 py-1 bg-purple-500 text-white rounded-md text-xs font-medium hover:bg-purple-600 transition-colors duration-200"
-                                      aria-label={`End ${activity.activity}`}
-                                    >
-                                      <StopCircle size={14} className="inline-block mr-1" /> End
-                                    </button>
-                                  )}
-                                  {log?.actualStart && (
-                                    <button
-                                      onClick={() => logTime(activity.id, 'reset')}
-                                      className="px-3 py-1 bg-red-500 text-white rounded-md text-xs font-medium hover:bg-red-600 transition-colors duration-200"
-                                      aria-label={`Reset ${activity.activity}`}
-                                    >
-                                      <RefreshCcw size={14} className="inline-block mr-1" /> Reset
-                                    </button>
-                                  )}
-                                  {(activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && (
-                                    assignedTaskInfo ? (
-                                      <button
-                                        onClick={() => handleUnassignTask(activity.id)}
-                                        className="px-3 py-1 bg-gray-500 text-white rounded-md text-xs font-medium hover:bg-gray-600 transition-colors duration-200"
-                                        aria-label={`Unassign task from ${activity.activity}`}
-                                      >
-                                        <Link size={14} className="inline-block mr-1 rotate-45" /> Unassign
-                                      </button>
-                                    ) : (
-                                      <button
-                                        onClick={() => openAssignTaskModal({ date: currentDate, activityId: activity.id })}
-                                        className="px-3 py-1 bg-indigo-500 text-white rounded-md text-xs font-medium hover:bg-indigo-600 transition-colors duration-200"
-                                        aria-label={`Assign task to ${activity.activity}`}
-                                      >
-                                        <Link size={14} className="inline-block mr-1" /> Assign
-                                      </button>
-                                    )
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
           </div>
-        )}
 
-        {/* Day Planner Tab */}
-        {activeTab === 'day-planner' && (
-          <div className="flex-grow flex flex-col">
-            <h2 className="text-2xl font-semibold text-indigo-800 mb-4">Customize Your Day Plans</h2>
-            <p className="text-gray-600 mb-4">
-              Select a day type to view and edit its recurring activities, or customize a specific day.
-            </p>
-
-            {/* Planner View Mode Selector */}
-            <div className="flex space-x-2 mb-4">
+          {/* Conditional rendering for tabs */}
+          {activeTab === 'schedule' && (
+            <div className="flex flex-col flex-grow">
+              {/* Date Navigation */}
+              <div className="flex justify-between items-center mb-4 flex-shrink-0">
                 <button
-                    onClick={() => setPlannerViewMode('daily')}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                        plannerViewMode === 'daily' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  onClick={() => navigateDate(-1)}
+                  className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+                <h2 className="text-2xl font-semibold text-indigo-800">
+                  {currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                </h2>
+                <button
+                  onClick={() => navigateDate(1)}
+                  className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
+                >
+                  <ChevronRight size={20} />
+                </button>
+              </div>
+
+              {/* Prominent Current/Next Activities */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  {currentOngoingTask ? (
+                      <div
+                          onClick={() => scrollToActivity(currentOngoingTask.id)}
+                          className="bg-white p-4 rounded-lg shadow-lg border-l-4 border-blue-500 cursor-pointer hover:bg-blue-50 transition-colors duration-200"
+                          role="button" tabIndex="0" aria-label={`Scroll to current activity: ${currentOngoingTask.activity}`}
+                      >
+                          <h5 className="text-md font-bold text-blue-700 flex items-center mb-1">
+                              <PlayCircle size={18} className="mr-2" /> Current Activity
+                          </h5>
+                          <p className="text-lg font-semibold text-gray-800">{currentOngoingTask.activity}</p>
+                          <p className="text-sm text-gray-600">{currentOngoingTask.plannedStart} - {currentOngoingTask.plannedEnd}</p>
+                          {getAssignedTaskInfo(currentOngoingTask.id) && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                  Working on: {getAssignedTaskInfo(currentOngoingTask.id).taskName}
+                                  {getAssignedTaskInfo(currentOngoingTask.id).subtaskName && ` - ${getAssignedTaskInfo(currentOngoingTask.id).subtaskName}`}
+                              </p>
+                          )}
+                          {getLogForActivity(currentOngoingTask.id)?.actualStart && !getLogForActivity(currentOngoingTask.id)?.actualEnd && (
+                              <div className="w-full bg-gray-200 rounded-full h-1 mt-2">
+                                  <div className="bg-blue-400 h-1 rounded-full" style={{ width: `${getProgressBarPercentage(currentOngoingTask.id)}%` }}></div>
+                              </div>
+                          )}
+                      </div>
+                  ) : (
+                      <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-gray-300">
+                          <h5 className="text-md font-bold text-gray-600 flex items-center mb-1">
+                              <Clock size={18} className="mr-2" /> No Current Activity
+                          </h5>
+                          <p className="text-sm text-gray-500">Start an activity from the schedule below.</p>
+                      </div>
+                  )}
+
+                  {nextTask ? (
+                      <div
+                          onClick={() => scrollToActivity(nextTask.id)}
+                          className="bg-white p-4 rounded-lg shadow-lg border-l-4 border-indigo-500 cursor-pointer hover:bg-indigo-50 transition-colors duration-200"
+                          role="button" tabIndex="0" aria-label={`Scroll to next scheduled activity: ${nextTask.activity}`}
+                      >
+                          <h5 className="text-md font-bold text-indigo-700 flex items-center mb-1">
+                              <FastForward size={18} className="mr-2" /> Next Scheduled Activity
+                          </h5>
+                          <p className="text-lg font-semibold text-gray-800">{nextTask.activity}</p>
+                          <p className="text-sm text-gray-600">{nextTask.plannedStart} - {nextTask.plannedEnd}</p>
+                      </div>
+                  ) : (
+                      <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-gray-300">
+                          <h5 className="text-md font-bold text-gray-600 flex items-center mb-1">
+                              <FastForward size={18} className="mr-2" /> No Upcoming Activity
+                          </h5>
+                          <p className="text-sm text-gray-500">Your schedule is clear for now.</p>
+                      </div>
+                  )}
+
+                  {nextPrayer ? (
+                      <div
+                          onClick={() => scrollToActivity(nextPrayer.id)}
+                          className="bg-white p-4 rounded-lg shadow-lg border-l-4 border-green-500 cursor-pointer hover:bg-green-50 transition-colors duration-200"
+                          role="button" tabIndex="0" aria-label={`Scroll to next prayer: ${nextPrayer.activity}`}
+                      >
+                          <h5 className="text-md font-bold text-green-700 flex items-center mb-1">
+                              <BellRing size={18} className="mr-2" /> Next Prayer
+                          </h5>
+                          <p className="text-lg font-semibold text-gray-800">{nextPrayer.activity}</p>
+                          <p className="text-sm text-gray-600">{nextPrayer.plannedStart} - {nextPrayer.plannedEnd}</p>
+                      </div>
+                  ) : (
+                      <div className="bg-white p-4 rounded-lg shadow-md border-l-4 border-gray-300">
+                          <h5 className="text-md font-bold text-gray-600 flex items-center mb-1">
+                              <BellRing size={18} className="mr-2" /> No Upcoming Prayer
+                          </h5>
+                          <p className="text-sm text-gray-500">All prayers for today are complete or not yet scheduled.</p>
+                      </div>
+                  )}
+              </div>
+
+              {/* Pomodoro Timer Dashboard */}
+              <div className={`rounded-lg p-6 mb-6 text-center shadow-lg flex-shrink-0 transition-colors duration-300
+                ${pomodoroTimer.mode === 'work' ? 'bg-green-100 border-2 border-green-300' :
+                  pomodoroTimer.mode === 'short_break' ? 'bg-blue-100 border-2 border-blue-300' :
+                  pomodoroTimer.mode === 'long_break' ? 'bg-purple-100 border-2 border-purple-300' : 'bg-indigo-50 border-2 border-indigo-200'
+                }`}
+              >
+                <h3 className="text-2xl font-bold text-indigo-800 mb-4">Pomodoro Dashboard</h3>
+
+                {/* Main Timer Display */}
+                <div className="relative w-48 h-48 mx-auto mb-6 flex items-center justify-center rounded-full bg-white shadow-inner">
+                  <div className="absolute inset-0 flex items-center justify-center text-6xl font-extrabold text-gray-900">
+                    {formatTime(pomodoroTimer.timeLeft)}
+                  </div>
+                  <div className="absolute inset-0 rounded-full border-8 border-gray-200"></div>
+                  <div className={`absolute inset-0 rounded-full border-8
+                    ${pomodoroTimer.mode === 'work' ? 'border-green-500' :
+                      pomodoroTimer.mode === 'short_break' ? 'border-blue-500' :
+                      pomodoroTimer.mode === 'long_break' ? 'border-purple-500' : 'border-transparent'
                     }`}
-                >
-                    Daily Plan Editor
-                </button>
-                <button
-                    onClick={() => setPlannerViewMode('templates')}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                        plannerViewMode === 'templates' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                >
-                    Template Editor
-                </button>
-            </div>
+                    style={{
+                      clipPath: `polygon(50% 0%, 50% 50%, ${50 + 50 * Math.sin(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / ((pomodoroTimer.mode === 'work' ? pomodoroSettings.work : (pomodoroTimer.mode === 'short_break' ? pomodoroSettings.shortBreak : pomodoroSettings.longBreak)) * 60))))}% ${50 - 50 * Math.cos(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / ((pomodoroTimer.mode === 'work' ? pomodoroSettings.work : (pomodoroTimer.mode === 'short_break' ? pomodoroSettings.shortBreak : pomodoroSettings.longBreak)) * 60))))}%)`
+                    }}
+                  ></div>
+                </div>
 
-            {plannerViewMode === 'templates' ? (
-                <>
-                    {/* Day Type Selector Buttons for Templates */}
-                    <div className="flex flex-wrap gap-2 mb-4">
-                    {['weekday', 'weekend', 'jumuah', 'fasting'].map(type => (
-                        <button
-                        key={type}
-                        onClick={() => setActivePlannerDayType(type)}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 capitalize ${
-                            activePlannerDayType === type ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                        >
-                        {type.replace('-', ' ')}
-                        </button>
-                    ))}
-                    </div>
-
-                    <button
-                    onClick={handleAddTemplateActivity}
-                    className="mb-4 px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center self-start"
-                    aria-label="Add New Activity"
-                    >
-                    <Plus size={20} className="mr-2" /> Add New Activity to {activePlannerDayType.replace('-', ' ')} Template
-                    </button>
-
-                    {/* Quick Reference Activity List for Current Day Type */}
-                    <div className="bg-indigo-50 rounded-lg p-4 mb-6 shadow-inner">
-                    <h3 className="text-lg font-semibold text-indigo-700 mb-2 capitalize">
-                        {activePlannerDayType.replace('-', ' ')} Activities Overview
-                    </h3>
-                    {plannerSchedule[activePlannerDayType] && plannerSchedule[activePlannerDayType].length > 0 ? (
-                        <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {plannerSchedule[activePlannerDayType]
-                            .sort((a, b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart))
-                            .map(activity => (
-                            <li key={activity.id} className="bg-white p-3 rounded-md shadow-sm flex items-center justify-between">
-                                <div>
-                                <p className="font-medium text-gray-800">{activity.activity}</p>
-                                <p className="text-xs text-gray-600">
-                                    {activity.plannedStart} - {activity.plannedEnd} | Type: {activity.type} | Recurrence: {activity.recurrenceType}
-                                    {activity.recurrenceType === 'weekly' && ` (${activity.recurrenceDays.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')})`}
-                                    | Constraint: {activity.constraintType}
-                                </p>
-                                </div>
-                                <div className="flex space-x-1">
-                                <button
-                                    onClick={() => handleEditTemplateActivity(activity)}
-                                    className="p-1 text-blue-500 hover:text-blue-700 transition-colors"
-                                    aria-label={`Edit ${activity.activity}`}
-                                >
-                                    <Edit size={16} />
-                                </button>
-                                <button
-                                    onClick={() => handleDeleteTemplateActivity(activity.id)}
-                                    className="p-1 text-red-500 hover:text-red-700 transition-colors"
-                                    aria-label={`Delete ${activity.activity}`}
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                                </div>
-                            </li>
-                            ))}
-                        </ul>
-                    ) : (
-                        <p className="text-sm text-gray-500">No activities defined for this day type yet. Click "Add New Activity" to start!</p>
-                    )}
-                    </div>
-
-
-                    {/* Visual Planner Timeline for Templates */}
-                    <div ref={plannerTimelineRef} className="relative w-full h-[1440px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200">
-                    {/* Time Grid Lines and Labels */}
-                    {[...Array(25)].map((_, hour) => (
-                        <React.Fragment key={hour}>
-                        <div
-                            className="absolute left-0 w-full border-t border-gray-200 text-xs text-gray-500 pl-2"
-                            style={{ top: `${(hour / 24) * 100}%`, height: '1px' }}
-                        >
-                            <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:00</span>
-                        </div>
-                        {hour < 24 && (
-                            <>
-                            <div
-                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                                style={{ top: `${(hour / 24) * 100 + (15 / 1440) * 100}%`, height: '1px' }}
-                            >
-                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:15</span>
-                            </div>
-                            <div
-                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                                style={{ top: `${(hour / 24) * 100 + (30 / 1440) * 100}%`, height: '1px' }}
-                            >
-                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:30</span>
-                            </div>
-                            <div
-                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                                style={{ top: `${(hour / 24) * 100 + (45 / 1440) * 100}%`, height: '1px' }}
-                            >
-                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:45</span>
-                            </div>
-                            </>
-                        )}
-                        </React.Fragment>
-                    ))}
-
-                    {/* Activity Blocks */}
-                    {plannerSchedule[activePlannerDayType] && plannerSchedule[activePlannerDayType].sort((a,b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)).map(activity => {
-                        const { top, height } = calculateBlockStyles(activity);
-                        const activityNameLower = activity.activity.toLowerCase();
-
-                        let bgColor = 'bg-indigo-200';
-                        if (activity.type === 'academic') bgColor = 'bg-blue-200';
-                        if (activity.type === 'spiritual') bgColor = 'bg-green-200';
-                        if (activity.type === 'physical') bgColor = 'bg-red-200';
-                        if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
-
-
-                        return (
-                        <div
-                            key={activity.id}
-                            className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
-                            ${bgColor}
-                            ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
-                            `}
-                            style={{ top, height }}
-                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'move', false)}
-                            onDoubleClick={() => handleEditTemplateActivity(activity)}
-                            title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
-                        >
-                            {/* Top Resize Handle */}
-                            <div
-                            className="absolute top-0 left-0 right-0 h-2 -mt-1 cursor-ns-resize z-30"
-                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'top', false)}
-                            ></div>
-                            <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
-                            <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
-                            {/* Bottom Resize Handle */}
-                            <div
-                            className="absolute bottom-0 left-0 right-0 h-2 -mb-1 cursor-ns-resize z-30"
-                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'bottom', false)}
-                            ></div>
-                        </div>
-                        );
-                    })}
-                    </div>
-
-                    <p className="text-sm text-gray-500 mt-4">Double-click an activity to edit details. Drag activities to adjust their times. Drag top/bottom edges to resize.</p>
-                </>
-            ) : (
-                <>
-                    {/* Date Navigation for Daily Planner Editor */}
-                    <div className="flex justify-between items-center mb-4">
-                        <button
-                            onClick={() => setSelectedPlannerDate(prev => { const newDate = new Date(prev); newDate.setDate(newDate.getDate() - 1); return newDate; })}
-                            className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
-                            aria-label="Previous day"
-                        >
-                            <ChevronLeft size={20} />
-                        </button>
-                        <h3 className="text-2xl font-semibold text-indigo-800">
-                            Daily Plan for {selectedPlannerDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                        </h3>
-                        <button
-                            onClick={() => setSelectedPlannerDate(prev => { const newDate = new Date(prev); newDate.setDate(newDate.getDate() + 1); return newDate; })}
-                            className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
-                            aria-label="Next day"
-                        >
-                            <ChevronRight size={20} />
-                        </button>
-                    </div>
-
-                    {/* Fasting Day Checkbox */}
-                    <div className="flex items-center justify-center mb-4">
-                        <input
-                            type="checkbox"
-                            id="isFastingDayPlanner"
-                            checked={!!fastingDates[formatDateToYYYYMMDD(selectedPlannerDate)]}
-                            onChange={() => handleToggleFastingDay(selectedPlannerDate)}
-                            className="form-checkbox h-5 w-5 text-indigo-600 rounded"
-                        />
-                        <label htmlFor="isFastingDayPlanner" className="ml-2 text-lg font-medium text-gray-700">
-                            Mark as Fasting Day
-                        </label>
-                    </div>
-
-                    {/* Base Template Selection */}
-                    <div className="flex items-center space-x-2 mb-4">
-                        <label htmlFor="baseTemplateSelect" className="block text-sm font-medium text-gray-700">Apply Base Template:</label>
-                        <select
-                            id="baseTemplateSelect"
-                            value={selectedBaseTemplate}
-                            onChange={(e) => setSelectedBaseTemplate(e.target.value)}
-                            className="p-2 border border-gray-300 rounded-md"
-                        >
-                            <option value="weekday">Weekday</option>
-                            <option value="weekend">Weekend</option>
-                            <option value="jumuah">Jumu'ah</option>
-                            <option value="fasting">Fasting Day</option>
-                        </select>
-                        <button
-                            onClick={handleApplyTemplateToDailyPlan}
-                            className="px-4 py-2 bg-blue-500 text-white rounded-md shadow-md hover:bg-blue-600 transition-colors duration-200 flex items-center"
-                            aria-label="Apply selected template"
-                        >
-                            Apply Template
-                        </button>
-                    </div>
-
-                    <button
-                        onClick={handleAddDailyActivity}
-                        className="mb-4 px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center self-start"
-                        aria-label="Add New Activity to Daily Plan"
-                    >
-                        <Plus size={20} className="mr-2" /> Add New Activity to Daily Plan
-                    </button>
-
-                    {/* Daily Plan Editor (based on dailyCustomSchedules or derived) */}
-                    <div className="overflow-y-auto flex-grow">
-                        <table className="min-w-full bg-white rounded-lg shadow-md">
-                            <thead className="bg-indigo-100 sticky top-0 z-10">
-                                <tr>
-                                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tl-lg">Activity</th>
-                                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Planned</th>
-                                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Type</th>
-                                    <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tr-lg">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {(() => {
-                                    const dateKey = formatDateToYYYYMMDD(selectedPlannerDate);
-                                    let currentDayActivities = dailyCustomSchedules[dateKey];
-
-                                    if (!currentDayActivities) {
-                                        currentDayActivities = generateScheduleForDate(selectedPlannerDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates);
-                                    }
-
-                                    const groupedDailyActivities = currentDayActivities.reduce((acc, activity) => {
-                                        const group = getTimeOfDayGroup(activity.plannedStart);
-                                        if (!acc[group]) { acc[group] = []; }
-                                        acc[group].push(activity);
-                                        return acc;
-                                    }, {});
-
-                                    return timeOfDayOrder.map(groupName => {
-                                        const activitiesInGroup = groupedDailyActivities[groupName];
-                                        if (!activitiesInGroup || activitiesInGroup.length === 0) return null;
-
-                                        const isCollapsed = collapsedSections[`daily-editor-${groupName}`];
-
-                                        return (
-                                            <React.Fragment key={`daily-editor-${groupName}`}>
-                                                <tr className="bg-indigo-200 sticky top-12 z-10">
-                                                    <td colSpan="4" className="py-2 px-4 text-left text-md font-bold text-indigo-800 cursor-pointer" onClick={() => toggleSection(`daily-editor-${groupName}`)}>
-                                                        {groupName.replace('-', ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-                                                        <span className="ml-2">{isCollapsed ? '▼' : '▲'}</span>
-                                                    </td>
-                                                </tr>
-                                                {!isCollapsed && activitiesInGroup.map((activity) => (
-                                                    <tr key={activity.id} className="border-b border-gray-200 hover:bg-gray-50">
-                                                        <td className="py-3 px-4 text-sm font-medium text-gray-700">
-                                                            {activity.activity}
-                                                            <span className="block text-xs text-gray-500">
-                                                                {activity.plannedStart} - {activity.plannedEnd}
-                                                            </span>
-                                                        </td>
-                                                        <td className="py-3 px-4 text-sm text-gray-600">
-                                                            {getPlannedDuration(activity.plannedStart, activity.plannedEnd, selectedPlannerDate).toFixed(2)} hrs
-                                                        </td>
-                                                        <td className="py-3 px-4 text-sm text-gray-600 capitalize">{activity.type}</td>
-                                                        <td className="py-3 px-4 text-sm">
-                                                            <div className="flex space-x-2">
-                                                                <button
-                                                                    onClick={() => handleEditDailyActivity(activity)}
-                                                                    className="p-2 bg-blue-500 text-white rounded-md text-xs hover:bg-blue-600 transition-colors duration-200"
-                                                                    aria-label={`Edit ${activity.activity}`}
-                                                                >
-                                                                    <Edit size={16} />
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleDeleteDailyActivity(activity.id)}
-                                                                    className="p-2 bg-red-500 text-white rounded-md text-xs hover:bg-red-600 transition-colors duration-200"
-                                                                    aria-label={`Delete ${activity.activity}`}
-                                                                >
-                                                                    <Trash2 size={16} />
-                                                                </button>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </React.Fragment>
-                                        );
-                                    });
-                                })()}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Visual Planner Timeline for Daily Editor */}
-                    <div ref={plannerTimelineRef} className="relative w-full h-[1440px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200 mt-6">
-                    {/* Time Grid Lines and Labels */}
-                    {[...Array(25)].map((_, hour) => (
-                        <React.Fragment key={hour}>
-                        <div
-                            className="absolute left-0 w-full border-t border-gray-200 text-xs text-gray-500 pl-2"
-                            style={{ top: `${(hour / 24) * 100}%`, height: '1px' }}
-                        >
-                            <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:00</span>
-                        </div>
-                        {hour < 24 && (
-                            <>
-                            <div
-                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                                style={{ top: `${(hour / 24) * 100 + (15 / 1440) * 100}%`, height: '1px' }}
-                            >
-                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:15</span>
-                            </div>
-                            <div
-                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                                style={{ top: `${(hour / 24) * 100 + (30 / 1440) * 100}%`, height: '1px' }}
-                            >
-                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:30</span>
-                            </div>
-                            <div
-                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                                style={{ top: `${(hour / 24) * 100 + (45 / 1440) * 100}%`, height: '1px' }}
-                            >
-                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:45</span>
-                            </div>
-                            </>
-                        )}
-                        </React.Fragment>
-                    ))}
-
-                    {/* Activity Blocks for Daily Editor */}
-                    {dailyCustomSchedules[formatDateToYYYYMMDD(selectedPlannerDate)] && dailyCustomSchedules[formatDateToYYYYMMDD(selectedPlannerDate)].sort((a,b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)).map(activity => {
-                        const { top, height } = calculateBlockStyles(activity);
-                        const activityNameLower = activity.activity.toLowerCase();
-
-                        let bgColor = 'bg-indigo-200';
-                        if (activity.type === 'academic') bgColor = 'bg-blue-200';
-                        if (activity.type === 'spiritual') bgColor = 'bg-green-200';
-                        if (activity.type === 'physical') bgColor = 'bg-red-200';
-                        if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
-
-                        return (
-                        <div
-                            key={activity.id}
-                            className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
-                            ${bgColor}
-                            ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
-                            `}
-                            style={{ top, height }}
-                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'move', true)}
-                            onDoubleClick={() => handleEditDailyActivity(activity)}
-                            title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
-                        >
-                            {/* Top Resize Handle */}
-                            <div
-                            className="absolute top-0 left-0 right-0 h-2 -mt-1 cursor-ns-resize z-30"
-                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'top', true)}
-                            ></div>
-                            <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
-                            <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
-                            {/* Bottom Resize Handle */}
-                            <div
-                            className="absolute bottom-0 left-0 right-0 h-2 -mb-1 cursor-ns-resize z-30"
-                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'bottom', true)}
-                            ></div>
-                        </div>
-                        );
-                    })}
-                    </div>
-                    <p className="text-sm text-gray-500 mt-4">Double-click an activity to edit details. Drag activities to adjust their times. Drag top/bottom edges to resize. Changes here only affect this specific day.</p>
-                </>
-            )}
-          </div>
-        )}
-
-        {/* Tasks Tab */}
-        {activeTab === 'tasks' && (
-          <div className="flex-grow overflow-y-auto">
-            <h2 className="text-2xl font-semibold text-indigo-800 mb-4">My Projects & Tasks</h2>
-            <p className="text-gray-600 mb-4">
-              Manage your long-term projects and individual tasks here. You can set target dates and track progress.
-            </p>
-            <div className="flex space-x-4 mb-4">
-              <button
-                onClick={handleAddTask}
-                className="px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center"
-                aria-label="Add New Task"
-              >
-                <Plus size={20} className="mr-2" /> Add New Task
-              </button>
-              <button
-                onClick={() => setShowEisenhowerMatrix(prev => !prev)}
-                className="px-4 py-2 bg-purple-500 text-white rounded-md shadow-md hover:bg-purple-600 transition-colors duration-200 flex items-center"
-                aria-label={showEisenhowerMatrix ? "Show All Tasks" : "Show Eisenhower Matrix"}
-              >
-                {showEisenhowerMatrix ? (
-                  <>
-                    <CalendarDays size={20} className="mr-2" /> Show All Tasks
-                  </>
-                ) : (
-                  <>
-                    <BarChart2 size={20} className="mr-2" /> Show Eisenhower Matrix
-                  </>
+                {/* Pomodoro Status and Linked Activity */}
+                <p className={`text-xl mb-4 capitalize font-semibold flex items-center justify-center
+                  ${pomodoroTimer.mode === 'work' ? 'text-green-700' :
+                    pomodoroTimer.mode === 'short_break' ? 'text-blue-700' :
+                    pomodoroTimer.mode === 'long_break' ? 'text-purple-700' : 'text-gray-600'
+                  }`}>
+                  {pomodoroTimer.mode.replace('_', ' ')} Session
+                </p>
+                {pomodoroTimer.linkedActivityId && (
+                  <p className="text-sm text-gray-700 mb-2">
+                    Linked to: <span className="font-bold">
+                      {dailyScheduleState.find(a => a.id === pomodoroTimer.linkedActivityId)?.activity || 'N/A'}
+                    </span>
+                  </p>
                 )}
-              </button>
-            </div>
+                {getAssignedTaskInfo(pomodoroTimer.linkedActivityId || currentPomodoroBlockId) && (
+                  <p className="text-sm text-gray-700 mb-2">
+                    Working on: <span className="font-bold">
+                      {getAssignedTaskInfo(pomodoroTimer.linkedActivityId || currentPomodoroBlockId).taskName}
+                      {getAssignedTaskInfo(pomodoroTimer.linkedActivityId || currentPomodoroBlockId).subtaskName && ` - ${getAssignedTaskInfo(pomodoroTimer.linkedActivityId || currentPomodoroBlockId).subtaskName}`}
+                    </span>
+                  </p>
+                )}
+                <p className="text-sm text-gray-500 mt-2">Pomodoros Completed: {pomodoroTimer.pomodorosCompleted}</p>
 
-            {showEisenhowerMatrix ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {['Do Now', 'Schedule', 'Delegate', 'Eliminate'].map(quadrant => (
-                  <div key={quadrant} className={`p-4 rounded-lg shadow-md
-                    ${quadrant === 'Do Now' ? 'bg-red-100 border-l-4 border-red-500' : ''}
-                    ${quadrant === 'Schedule' ? 'bg-blue-100 border-l-4 border-blue-500' : ''}
-                    ${quadrant === 'Delegate' ? 'bg-yellow-100 border-l-4 border-yellow-500' : ''}
-                    ${quadrant === 'Eliminate' ? 'bg-gray-100 border-l-4 border-gray-500' : ''}
-                  `}>
-                    <h3 className="text-lg font-bold mb-3">
-                      {quadrant}
-                      <span className="block text-sm font-normal text-gray-600">
-                        {quadrant === 'Do Now' && 'Urgent & Important'}
-                        {quadrant === 'Schedule' && 'Important, Not Urgent'}
-                        {quadrant === 'Delegate' && 'Urgent, Not Important'}
-                        {quadrant === 'Eliminate' && 'Not Urgent, Not Important'}
-                      </span>
-                    </h3>
-                    {eisenhowerTasks[quadrant] && eisenhowerTasks[quadrant].length > 0 ? (
-                      <ul className="space-y-2">
-                        {eisenhowerTasks[quadrant].map(task => (
-                          <li key={task.id} className="bg-white p-3 rounded-md shadow-sm flex items-center justify-between">
-                            <span className="font-medium text-gray-800">{task.name}</span>
-                            <div className="flex space-x-1">
-                                <button
-                                  onClick={() => handleEditTask(task)}
-                                  className="p-1 text-blue-500 hover:text-blue-700 transition-colors"
-                                  aria-label={`Edit ${task.name}`}
-                                >
-                                  <Edit size={16} />
-                                </button>
-                                <button
-                                    onClick={() => handleSaveTask({...task, actualCompletionDate: formatDateToYYYYMMDD(new Date()), status: 'completed'})}
-                                    className="p-1 text-green-500 hover:text-green-700 transition-colors"
-                                    aria-label={`Mark ${task.name} as complete`}
-                                >
-                                    <CheckCircle size={16} />
-                                </button>
-                                <button
-                                  onClick={() => openAssignTaskModal(null, { taskId: task.id, subtaskId: null })}
-                                  className="p-1 text-indigo-500 hover:text-indigo-700 transition-colors"
-                                  aria-label={`Assign ${task.name} to schedule`}
-                                >
-                                  <Link size={16} />
-                                </button>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-sm text-gray-500">No tasks in this quadrant.</p>
-                    )}
-                  </div>
-                ))}
+                {/* Main Controls */}
+                <div className="flex justify-center space-x-4 mt-6">
+                  <button
+                    onClick={() => startPomodoroSession('work', pomodoroSettings.work, currentActivityId)}
+                    disabled={pomodoroTimer.running}
+                    className="px-4 py-2 rounded-full bg-green-500 text-white shadow-md hover:bg-green-600 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                    aria-label="Start Pomodoro Work Session"
+                  >
+                    <Play size={20} className="mr-2" />
+                    {currentActivityId && dailyScheduleState.find(a => a.id === currentActivityId)?.type === 'academic'
+                      ? `Start Pomodoro for ${dailyScheduleState.find(a => a.id === currentActivityId)?.activity}`
+                      : 'Start Work'}
+                  </button>
+                  <button
+                    onClick={pausePomodoro}
+                    disabled={!pomodoroTimer.running}
+                    className="px-4 py-2 rounded-full bg-yellow-500 text-white shadow-md hover:bg-yellow-600 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                    aria-label="Pause Pomodoro"
+                  >
+                    <Pause size={20} className="mr-2" /> Pause
+                  </button>
+                  <button
+                    onClick={resetPomodoro}
+                    className="px-4 py-2 rounded-full bg-red-500 text-white shadow-md hover:bg-red-600 transition-colors duration-200 flex items-center"
+                    aria-label="Reset Pomodoro"
+                  >
+                    <RotateCcw size={20} className="mr-2" /> Reset
+                  </button>
+                </div>
+
+                {/* Manual Break Controls */}
+                <div className="mt-4 flex justify-center space-x-2">
+                  <button
+                    onClick={() => startPomodoroSession('short_break', pomodoroSettings.shortBreak)}
+                    className="px-3 py-1 bg-blue-500 text-white rounded-md text-sm shadow-md hover:bg-blue-600 transition-colors duration-200"
+                    aria-label="Start Short Break"
+                  >
+                    <Square size={14} className="inline-block mr-1" /> Short Break ({pomodoroSettings.shortBreak}m)
+                  </button>
+                  <button
+                    onClick={() => startPomodoroSession('long_break', pomodoroSettings.longBreak)}
+                    className="px-3 py-1 bg-purple-500 text-white rounded-md text-sm shadow-md hover:bg-purple-600 transition-colors duration-200"
+                    aria-label="Start Long Break"
+                  >
+                    <Square size={14} className="inline-block mr-1" /> Long Break ({pomodoroSettings.longBreak}m)
+                  </button>
+                </div>
+
+                {/* Audio Enable Button */}
+                {!audioEnabled && (
+                  <button
+                    onClick={handleEnableAudio}
+                    className="mt-6 px-4 py-2 bg-purple-500 text-white rounded-md shadow-md hover:bg-purple-600 transition-colors duration-200 flex items-center justify-center mx-auto"
+                  >
+                    <BellRing size={20} className="mr-2" /> Enable Sounds
+                  </button>
+                )}
+                {audioEnabled && (
+                  <p className="mt-6 text-sm text-green-700 flex items-center justify-center">
+                    <BellRing size={16} className="mr-1" /> Sounds Enabled
+                  </p>
+                )}
               </div>
-            ) : (
-              <div className="overflow-x-auto">
+
+              {/* Daily Insights */}
+              <div className="mb-6">
+                  <h4 className="text-xl font-semibold text-indigo-700 mb-4">Daily Insights</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left mb-6">
+                    <div className="bg-white p-4 rounded-lg shadow-sm">
+                      <p className="text-sm text-gray-600">
+                        Focused Work: <span className="font-bold">{(reportData.totalFocused || 0).toFixed(2)} / {(reportData.totalPlannedFocusedTime || 0).toFixed(2)} hrs</span>
+                      </p>
+                      <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                          <div className="bg-blue-500 h-2 rounded-full" style={{width: `${((reportData.totalFocused || 0) / Math.max((reportData.totalPlannedFocusedTime || 0), 1)) * 100}%`}}></div>
+                      </div>
+                    </div>
+                    <div className="bg-white p-4 rounded-lg shadow-sm">
+                      <p className="text-sm text-gray-600">
+                        Total Activities: <span className="font-bold">{(reportData.totalActualTimeAllActivities || 0).toFixed(2)} / {(reportData.totalPlannedTimeAllActivities || 0).toFixed(2)} hrs</span>
+                      </p>
+                       <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                          <div className="bg-green-500 h-2 rounded-full" style={{width: `${((reportData.totalActualTimeAllActivities || 0) / Math.max((reportData.totalPlannedTimeAllActivities || 0), 1)) * 100}%`}}></div>
+                      </div>
+                    </div>
+                  </div>
+              </div>
+
+              {/* Scrollable Schedule Table */}
+              <div className="overflow-y-auto flex-grow relative" ref={scheduleTableRef}>
+                {/* "Now" Indicator Line */}
+                <div
+                  className="absolute left-0 right-0 h-0.5 bg-red-500 z-20 transition-all duration-1000 ease-linear"
+                  style={{ top: `${nowIndicatorTop}px` }}
+                >
+                  <div className="absolute -left-1.5 -top-1.5 w-3 h-3 rounded-full bg-red-500 border-2 border-white"></div>
+                  <span className="absolute left-4 -top-2 text-xs text-red-700 font-bold">Now</span>
+                </div>
+
                 <table className="min-w-full bg-white rounded-lg shadow-md">
-                  <thead className="bg-indigo-100">
+                  {/* Ref for thead to calculate "Now" line offset */}
+                  <thead className="bg-indigo-100 sticky top-0 z-10" ref={theadRef}>
                     <tr>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tl-lg">Task Name</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Type</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Target Start</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Deadline</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Expected Duration</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Urgency</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Importance</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Status</th>
+                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tl-lg">Activity</th>
+                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Planned</th>
+                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual Start</th>
+                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual End</th>
+                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual Duration</th>
                       <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tr-lg">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {projectTasks.sort((a, b) => {
-                      const dateA = a.deadlineDate ? new Date(a.deadlineDate) : new Date('9999-12-31');
-                      const dateB = b.deadlineDate ? new Date(b.deadlineDate) : new Date('9999-12-31');
-                      return dateA - dateB;
-                    }).map((task) => {
-                      let taskStatus = task.status;
-                      const today = new Date();
-                      today.setHours(0,0,0,0);
+                    {timeOfDayOrder.map(groupName => {
+                      const activitiesInGroup = groupedSchedule[groupName];
+                      if (!activitiesInGroup || activitiesInGroup.length === 0) return null;
 
-                      const deadline = task.deadlineDate ? new Date(task.deadlineDate) : null;
-                      if (deadline) deadline.setHours(0,0,0,0);
-
-                      const targetStart = task.targetStartDate ? new Date(task.targetStartDate) : null;
-                      if (targetStart) targetStart.setHours(0,0,0,0);
-
-                      if (task.actualCompletionDate) { taskStatus = 'completed'; }
-                      else if (deadline && today > deadline && task.status !== 'completed') { taskStatus = 'overdue'; }
-                      else if (task.status === 'pending' && targetStart && today >= targetStart) { taskStatus = 'in-progress'; }
-
-                      const isDueSoon = !task.actualCompletionDate && deadline && (deadline.getTime() - today.getTime() <= 7 * 24 * 60 * 60 * 1000) && today <= deadline;
-                      const isOverdue = taskStatus === 'overdue';
+                      const isCollapsed = collapsedSections[groupName];
 
                       return (
-                        <tr key={task.id} className={`border-b border-gray-200 hover:bg-gray-50
-                          ${isOverdue ? 'bg-red-50' : isDueSoon ? 'bg-yellow-50' : ''}
-                        `}>
-                          <td className="py-3 px-4 text-sm font-medium text-gray-700">
-                            {task.name}
-                            {(isDueSoon || isOverdue) && (
-                              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold
-                                ${isOverdue ? 'bg-red-400 text-white' : 'bg-yellow-400 text-gray-800'}
-                              `}>
-                                {isOverdue ? 'Overdue' : 'Due Soon'}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-sm text-gray-600 capitalize">{task.type}</td>
-                          <td className="py-3 px-4 text-sm text-gray-600">{task.targetStartDate || '-'}</td>
-                          <td className="py-3 px-4 text-sm text-gray-600">{task.deadlineDate || '-'}</td>
-                          <td className="py-3 px-4 text-sm text-gray-600">{task.expectedDurationHours ? `${task.expectedDurationHours} hrs` : '-'}</td>
-                          <td className="py-3 px-4 text-sm text-gray-600 capitalize">{task.urgency || '-'}</td>
-                          <td className="py-3 px-4 text-sm text-gray-600 capitalize">{task.importance || '-'}</td>
-                          <td className="py-3 px-4 text-sm text-gray-600 capitalize">
-                            <span className={`font-semibold
-                              ${taskStatus === 'completed' ? 'text-green-600' : ''}
-                              ${taskStatus === 'overdue' ? 'text-red-600' : ''}
-                              ${taskStatus === 'in-progress' ? 'text-blue-600' : ''}
-                            `}>
-                              {taskStatus.replace('-', ' ')}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-sm">
-                            <div className="flex space-x-2">
-                              <button
-                                onClick={() => handleEditTask(task)}
-                                className="p-2 bg-blue-500 text-white rounded-md text-xs hover:bg-blue-600 transition-colors duration-200"
-                                aria-label={`Edit ${task.name}`}
+                        <React.Fragment key={groupName}>
+                          <tr className="bg-indigo-200 sticky top-12 z-10">
+                            <td colSpan="6" className="py-2 px-4 text-left text-md font-bold text-indigo-800 cursor-pointer" onClick={() => toggleSection(groupName)}>
+                              {groupName.replace('-', ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                              <span className="ml-2">{isCollapsed ? '▼' : '▲'}</span>
+                            </td>
+                          </tr>
+                          {!isCollapsed && activitiesInGroup.map((activity) => {
+                            const log = getLogForActivity(activity.id);
+                            const assignedTaskInfo = getAssignedTaskInfo(activity.id);
+                            const actualDuration = getActualDuration(log);
+                            const progressBarPercentage = getProgressBarPercentage(activity.id);
+                            const isSubdividedBlock = (activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && activity.id.includes('-part');
+                            const currentActivityNotes = subTaskDetails[activity.id] || '';
+                            const timeGroup = getTimeOfDayGroup(activity.plannedStart);
+                            const activityNameLower = activity.activity.toLowerCase();
+                            const isPrayerBlock = activityNameLower.includes('iqamah & prayer') || activityNameLower.includes('prayer');
+
+                            let status = '';
+                            let statusIcon = null;
+                            const now = new Date();
+                            const plannedStart = parseTime(activity.plannedStart, currentDate);
+                            const plannedEnd = parseTime(activity.plannedEnd, currentDate);
+                            let activityEndToday = new Date(plannedEnd);
+                            if (plannedEnd < plannedStart) {
+                              activityEndToday.setDate(activityEndToday.getDate() + 1);
+                            }
+
+                            let statusColor = '';
+                            if (log?.actualEnd) {
+                              status = 'Completed'; statusIcon = <CheckCircle size={14} className="inline-block mr-1" />; statusColor = 'text-green-600';
+                            } else if (log?.actualStart && !log?.actualEnd) {
+                              status = 'Started'; statusIcon = <PlayCircle size={14} className="inline-block mr-1" />; statusColor = 'text-blue-600';
+                            } else if (now > activityEndToday && !log?.actualEnd) {
+                              status = 'Overdue'; statusIcon = <AlertCircle size={14} className="inline-block mr-1" />; statusColor = 'text-red-600';
+                            } else {
+                              status = 'Scheduled'; statusIcon = <Clock size={14} className="inline-block mr-1" />; statusColor = 'text-gray-500';
+                            }
+
+                            return (
+                              <tr
+                                key={activity.id}
+                                ref={el => activityRefs.current.set(activity.id, el)}
+                                className={`border-b border-gray-200 hover:bg-gray-50 relative
+                                  ${activity.id === currentActivityId ? 'bg-indigo-100 border-l-4 border-indigo-600' : ''}
+                                  ${isPrayerBlock
+                                    ? 'bg-green-50'
+                                    : (
+                                      timeGroup === 'night' ? 'bg-gray-100' :
+                                      timeGroup === 'early-morning' ? 'bg-sky-50' :
+                                      timeGroup === 'midday' ? 'bg-amber-50' :
+                                      timeGroup === 'afternoon' ? 'bg-teal-50' :
+                                      timeGroup === 'evening' ? 'bg-purple-50' : ''
+                                    )
+                                  }
+                                `}
                               >
-                                <Edit size={16} />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteTask(task.id)}
-                                className="p-2 bg-red-500 text-white rounded-md text-xs hover:bg-red-600 transition-colors duration-200"
-                                aria-label={`Delete ${task.name}`}
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                              {!task.actualCompletionDate && taskStatus !== 'completed' && (
-                                  <button
-                                      onClick={() => handleSaveTask({...task, actualCompletionDate: formatDateToYYYYMMDD(new Date()), status: 'completed'})}
-                                      className="p-2 bg-green-500 text-white rounded-md text-xs hover:bg-green-600 transition-colors duration-200"
-                                      aria-label={`Mark ${task.name} as complete`}
-                                  >
-                                      <CheckCircle size={16} />
-                                  </button>
-                              )}
-                              <button
-                                onClick={() => openAssignTaskModal(null, { taskId: task.id, subtaskId: null })}
-                                className="p-2 bg-indigo-500 text-white rounded-md text-xs hover:bg-indigo-600 transition-colors duration-200"
-                                aria-label={`Assign ${task.name} to schedule`}
-                              >
-                                <Link size={16} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+                                <td className="py-3 px-4 text-sm font-medium text-gray-700">
+                                  <span className={`${isPrayerBlock ? 'font-bold' : ''}`}>
+                                    {activity.activity}
+                                  </span>
+                                  <span className="block text-xs text-gray-500">
+                                    {activity.plannedStart} - {activity.plannedEnd}
+                                  </span>
+                                  <span className={`block text-xs font-semibold ${statusColor}`}>
+                                    {statusIcon} {status}
+                                  </span>
+                                  {(isSubdividedBlock || assignedTaskInfo) && (
+                                    <div className="flex items-center text-xs text-gray-600 mt-1">
+                                      <span className="mr-1 text-indigo-500"><Edit size={12} /></span>
+                                      {assignedTaskInfo ? (
+                                        <span className="italic text-indigo-700">
+                                          {assignedTaskInfo.taskName}
+                                          {assignedTaskInfo.subtaskName && ` - ${assignedTaskInfo.subtaskName}`}
+                                        </span>
+                                      ) : editingSubTaskId === activity.id ? (
+                                        <input
+                                          type="text"
+                                          value={currentActivityNotes}
+                                          onChange={(e) => handleActivityNotesChange(activity.id, e.target.value)}
+                                          onBlur={() => handleActivityNotesBlur(activity.id)}
+                                          onKeyDown={(e) => handleActivityNotesKeyDown(e, activity.id)}
+                                          className="border-b border-indigo-400 focus:outline-none focus:border-indigo-600 text-sm bg-transparent w-full"
+                                          autoFocus
+                                          aria-label={`Edit activity notes for ${activity.activity}`}
+                                        />
+                                      ) : (
+                                        <span
+                                          onClick={() => setEditingSubTaskId(activity.id)}
+                                          className="cursor-pointer hover:text-indigo-700 italic"
+                                          role="button" tabIndex="0" aria-label={`Add or edit activity notes for ${activity.activity}`}
+                                        >
+                                          {currentActivityNotes || 'Click to add activity notes'}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                  {log?.actualStart && !log?.actualEnd && progressBarPercentage > 0 && (
+                                    <div className="absolute bottom-0 left-0 h-1 bg-green-400 rounded-full"
+                                         style={{ width: `${progressBarPercentage}%` }}></div>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-gray-600">
+                                  {getPlannedDuration(activity.plannedStart, activity.plannedEnd, currentDate).toFixed(2)} hrs
+                                </td>
+                                <td className="py-3 px-4 text-sm text-gray-600">
+                                  {formatDateTime(log?.actualStart)}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-gray-600">
+                                  {formatDateTime(log?.actualEnd)}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-gray-600">{actualDuration > 0 ? `${actualDuration.toFixed(2)} hrs` : '-'}</td>
+                                <td className="py-3 px-4 text-sm">
+                                  <div className="flex space-x-2">
+                                    {!log?.actualStart && (
+                                      <button
+                                        onClick={() => logTime(activity.id, 'start')}
+                                        className="px-3 py-1 bg-blue-500 text-white rounded-md text-xs font-medium hover:bg-blue-600 transition-colors duration-200"
+                                        aria-label={`Start ${activity.activity}`}
+                                      >
+                                        <Play size={14} className="inline-block mr-1" /> Start
+                                      </button>
+                                    )}
+                                    {log?.actualStart && !log?.actualEnd && (
+                                      <button
+                                        onClick={() => logTime(activity.id, 'end')}
+                                        className="px-3 py-1 bg-purple-500 text-white rounded-md text-xs font-medium hover:bg-purple-600 transition-colors duration-200"
+                                        aria-label={`End ${activity.activity}`}
+                                      >
+                                        <StopCircle size={14} className="inline-block mr-1" /> End
+                                      </button>
+                                    )}
+                                    {log?.actualStart && (
+                                      <button
+                                        onClick={() => logTime(activity.id, 'reset')}
+                                        className="px-3 py-1 bg-red-500 text-white rounded-md text-xs font-medium hover:bg-red-600 transition-colors duration-200"
+                                        aria-label={`Reset ${activity.activity}`}
+                                      >
+                                        <RefreshCcw size={14} className="inline-block mr-1" /> Reset
+                                      </button>
+                                    )}
+                                    {(activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && (
+                                      assignedTaskInfo ? (
+                                        <button
+                                          onClick={() => handleUnassignTask(activity.id)}
+                                          className="px-3 py-1 bg-gray-500 text-white rounded-md text-xs font-medium hover:bg-gray-600 transition-colors duration-200"
+                                          aria-label={`Unassign task from ${activity.activity}`}
+                                        >
+                                          <Link size={14} className="inline-block mr-1 rotate-45" /> Unassign
+                                        </button>
+                                      ) : (
+                                        <button
+                                          onClick={() => openAssignTaskModal({ date: currentDate, activityId: activity.id })}
+                                          className="px-3 py-1 bg-indigo-500 text-white rounded-md text-xs font-medium hover:bg-indigo-600 transition-colors duration-200"
+                                          aria-label={`Assign task to ${activity.activity}`}
+                                        >
+                                          <Link size={14} className="inline-block mr-1" /> Assign
+                                        </button>
+                                      )
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </React.Fragment>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
-            )}
-          </div>
-        )}
-
-
-        {/* Report Tab */}
-        {activeTab === 'report' && (
-          <div className="flex-grow overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <button
-                onClick={() => setReportDate(prev => { const newDate = new Date(prev); newDate.setDate(newDate.getDate() - 1); return newDate; })}
-                className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
-                aria-label="Previous day"
-              >
-                <ChevronLeft size={20} />
-              </button>
-              <h2 className="text-2xl font-semibold text-indigo-800">
-                Report for {reportDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-              </h2>
-              <button
-                onClick={() => setReportDate(prev => { const newDate = new Date(prev); newDate.setDate(newDate.getDate() + 1); return newDate; })}
-                className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
-                aria-label="Next day"
-              >
-                <ChevronRight size={20} />
-              </button>
             </div>
+          )}
 
-            <div className="bg-indigo-50 rounded-lg p-4 mb-6 shadow-inner">
-              <h3 className="text-xl font-semibold text-indigo-700 mb-2">Summary</h3>
-              <p className="text-lg text-gray-700">
-                Total Actual Deep Work Mode Time:{' '}
-                <span className="font-bold">{(reportData.totalFocused || 0).toFixed(2)} hours</span>
+          {/* Day Planner Tab */}
+          {activeTab === 'day-planner' && (
+            <div className="flex-grow flex flex-col">
+              <h2 className="text-2xl font-semibold text-indigo-800 mb-4">Customize Your Day Plans</h2>
+              <p className="text-gray-600 mb-4">
+                Select a day type to view and edit its recurring activities, or customize a specific day.
               </p>
-              <p className="text-lg text-gray-700">
-                Total Actual Time (All Activities):{' '}
-                <span className="font-bold">{(reportData.totalActualTimeAllActivities || 0).toFixed(2)} hours</span>
+
+              {/* Planner View Mode Selector */}
+              <div className="flex space-x-2 mb-4">
+                  <button
+                      onClick={() => setPlannerViewMode('daily')}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                          plannerViewMode === 'daily' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                  >
+                      Daily Plan Editor
+                  </button>
+                  <button
+                      onClick={() => setPlannerViewMode('templates')}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                          plannerViewMode === 'templates' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                  >
+                      Template Editor
+                  </button>
+              </div>
+
+              {plannerViewMode === 'templates' ? (
+                  <>
+                      {/* Day Type Selector Buttons for Templates */}
+                      <div className="flex flex-wrap gap-2 mb-4">
+                      {['weekday', 'weekend', 'jumuah', 'fasting'].map(type => (
+                          <button
+                          key={type}
+                          onClick={() => setActivePlannerDayType(type)}
+                          className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 capitalize ${
+                              activePlannerDayType === type ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                          >
+                          {type.replace('-', ' ')}
+                          </button>
+                      ))}
+                      </div>
+
+                      <button
+                      onClick={handleAddTemplateActivity}
+                      className="mb-4 px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center self-start"
+                      aria-label="Add New Activity"
+                      >
+                      <Plus size={20} className="mr-2" /> Add New Activity to {activePlannerDayType.replace('-', ' ')} Template
+                      </button>
+
+                      {/* Quick Reference Activity List for Current Day Type */}
+                      <div className="bg-indigo-50 rounded-lg p-4 mb-6 shadow-inner">
+                      <h3 className="text-lg font-semibold text-indigo-700 mb-2 capitalize">
+                          {activePlannerDayType.replace('-', ' ')} Activities Overview
+                      </h3>
+                      {plannerSchedule[activePlannerDayType] && plannerSchedule[activePlannerDayType].length > 0 ? (
+                          <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {plannerSchedule[activePlannerDayType]
+                              .sort((a, b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart))
+                              .map(activity => (
+                              <li key={activity.id} className="bg-white p-3 rounded-md shadow-sm flex items-center justify-between">
+                                  <div>
+                                  <p className="font-medium text-gray-800">{activity.activity}</p>
+                                  <p className="text-xs text-gray-600">
+                                      {activity.plannedStart} - {activity.plannedEnd} | Type: {activity.type} | Recurrence: {activity.recurrenceType}
+                                      {activity.recurrenceType === 'weekly' && ` (${activity.recurrenceDays.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')})`}
+                                      | Constraint: {activity.constraintType}
+                                  </p>
+                                  </div>
+                                  <div className="flex space-x-1">
+                                  <button
+                                      onClick={() => handleEditTemplateActivity(activity)}
+                                      className="p-1 text-blue-500 hover:text-blue-700 transition-colors"
+                                      aria-label={`Edit ${activity.activity}`}
+                                  >
+                                      <Edit size={16} />
+                                  </button>
+                                  <button
+                                      onClick={() => handleDeleteTemplateActivity(activity.id)}
+                                      className="p-1 text-red-500 hover:text-red-700 transition-colors"
+                                      aria-label={`Delete ${activity.activity}`}
+                                  >
+                                      <Trash2 size={16} />
+                                  </button>
+                                  </div>
+                              </li>
+                              ))}
+                          </ul>
+                      ) : (
+                          <p className="text-sm text-gray-500">No activities defined for this day type yet. Click "Add New Activity" to start!</p>
+                      )}
+                      </div>
+
+
+                      {/* Visual Planner Timeline for Templates */}
+                      <div ref={plannerTimelineRef} className="relative w-full h-[1440px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200">
+                      {/* Time Grid Lines and Labels */}
+                      {[...Array(25)].map((_, hour) => (
+                          <React.Fragment key={hour}>
+                          <div
+                              className="absolute left-0 w-full border-t border-gray-200 text-xs text-gray-500 pl-2"
+                              style={{ top: `${(hour / 24) * 100}%`, height: '1px' }}
+                          >
+                              <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:00</span>
+                          </div>
+                          {hour < 24 && (
+                              <>
+                              <div
+                                  className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                  style={{ top: `${(hour / 24) * 100 + (15 / 1440) * 100}%`, height: '1px' }}
+                              >
+                                  <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:15</span>
+                              </div>
+                              <div
+                                  className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                  style={{ top: `${(hour / 24) * 100 + (30 / 1440) * 100}%`, height: '1px' }}
+                              >
+                                  <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:30</span>
+                              </div>
+                              <div
+                                  className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                  style={{ top: `${(hour / 24) * 100 + (45 / 1440) * 100}%`, height: '1px' }}
+                              >
+                                  <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:45</span>
+                              </div>
+                              </>
+                          )}
+                          </React.Fragment>
+                      ))}
+
+                      {/* Activity Blocks */}
+                      {plannerSchedule[activePlannerDayType] && plannerSchedule[activePlannerDayType].sort((a,b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)).map(activity => {
+                          const { top, height } = calculateBlockStyles(activity);
+                          const activityNameLower = activity.activity.toLowerCase();
+
+                          let bgColor = 'bg-indigo-200';
+                          if (activity.type === 'academic') bgColor = 'bg-blue-200';
+                          if (activity.type === 'spiritual') bgColor = 'bg-green-200';
+                          if (activity.type === 'physical') bgColor = 'bg-red-200';
+                          if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
+
+
+                          return (
+                          <div
+                              key={activity.id}
+                              className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
+                              ${bgColor}
+                              ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
+                              `}
+                              style={{ top, height }}
+                              onMouseDown={(e) => handleMouseDown(e, activity.id, 'move', false)}
+                              onDoubleClick={() => handleEditTemplateActivity(activity)}
+                              title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
+                          >
+                              {/* Top Resize Handle */}
+                              <div
+                              className="absolute top-0 left-0 right-0 h-2 -mt-1 cursor-ns-resize z-30"
+                              onMouseDown={(e) => handleMouseDown(e, activity.id, 'top', false)}
+                              ></div>
+                              <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
+                              <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
+                              {/* Bottom Resize Handle */}
+                              <div
+                              className="absolute bottom-0 left-0 right-0 h-2 -mb-1 cursor-ns-resize z-30"
+                              onMouseDown={(e) => handleMouseDown(e, activity.id, 'bottom', false)}
+                              ></div>
+                          </div>
+                          );
+                      })}
+                      </div>
+
+                      <p className="text-sm text-gray-500 mt-4">Double-click an activity to edit details. Drag activities to adjust their times. Drag top/bottom edges to resize.</p>
+                  </>
+              ) : (
+                  <>
+                      {/* Date Navigation for Daily Planner Editor */}
+                      <div className="flex justify-between items-center mb-4">
+                          <button
+                              onClick={() => setSelectedPlannerDate(prev => { const newDate = new Date(prev); newDate.setDate(newDate.getDate() - 1); return newDate; })}
+                              className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
+                              aria-label="Previous day"
+                          >
+                              <ChevronLeft size={20} />
+                          </button>
+                          <h3 className="text-2xl font-semibold text-indigo-800">
+                              Daily Plan for {selectedPlannerDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                          </h3>
+                          <button
+                              onClick={() => setSelectedPlannerDate(prev => { const newDate = new Date(prev); newDate.setDate(newDate.getDate() + 1); return newDate; })}
+                              className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
+                              aria-label="Next day"
+                          >
+                              <ChevronRight size={20} />
+                          </button>
+                      </div>
+
+                      {/* Fasting Day Checkbox */}
+                      <div className="flex items-center justify-center mb-4">
+                          <input
+                              type="checkbox"
+                              id="isFastingDayPlanner"
+                              checked={!!fastingDates[formatDateToYYYYMMDD(selectedPlannerDate)]}
+                              onChange={() => handleToggleFastingDay(selectedPlannerDate)}
+                              className="form-checkbox h-5 w-5 text-indigo-600 rounded"
+                          />
+                          <label htmlFor="isFastingDayPlanner" className="ml-2 text-lg font-medium text-gray-700">
+                              Mark as Fasting Day
+                          </label>
+                      </div>
+
+                      {/* Base Template Selection */}
+                      <div className="flex items-center space-x-2 mb-4">
+                          <label htmlFor="baseTemplateSelect" className="block text-sm font-medium text-gray-700">Apply Base Template:</label>
+                          <select
+                              id="baseTemplateSelect"
+                              value={selectedBaseTemplate}
+                              onChange={(e) => setSelectedBaseTemplate(e.target.value)}
+                              className="p-2 border border-gray-300 rounded-md"
+                          >
+                              <option value="weekday">Weekday</option>
+                              <option value="weekend">Weekend</option>
+                              <option value="jumuah">Jumu'ah</option>
+                              <option value="fasting">Fasting Day</option>
+                          </select>
+                          <button
+                              onClick={handleApplyTemplateToDailyPlan}
+                              className="px-4 py-2 bg-blue-500 text-white rounded-md shadow-md hover:bg-blue-600 transition-colors duration-200 flex items-center"
+                              aria-label="Apply selected template"
+                          >
+                              Apply Template
+                          </button>
+                      </div>
+
+                      <button
+                          onClick={handleAddDailyActivity}
+                          className="mb-4 px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center self-start"
+                          aria-label="Add New Activity to Daily Plan"
+                      >
+                          <Plus size={20} className="mr-2" /> Add New Activity to Daily Plan
+                      </button>
+
+                      {/* AI Schedule Refinement Input */}
+                      <div className="mt-6 p-4 bg-gray-50 rounded-lg shadow-inner mb-6">
+                        <h3 className="text-xl font-semibold text-indigo-700 mb-2">AI Schedule Refinement</h3>
+                        <textarea
+                          id="aiCommandInput"
+                          rows="3"
+                          placeholder="e.g., 'Move my morning exercise to 7 AM and make it 45 minutes long' or 'Shift all academic blocks 30 minutes later today'"
+                          className="w-full p-2 border border-gray-300 rounded-md mb-2"
+                          value={aiCommandInput}
+                          onChange={(e) => setAiCommandInput(e.target.value)}
+                        ></textarea>
+                        <button
+                          onClick={() => refineScheduleWithAI(aiCommandInput)}
+                          className="px-4 py-2 bg-purple-600 text-white rounded-md shadow-md hover:bg-purple-700 transition-colors flex items-center"
+                          aria-label="Refine schedule with AI"
+                        >
+                          <Play size={18} className="inline-block mr-1" /> Refine with AI
+                        </button>
+                      </div>
+
+                      {/* Daily Plan Editor (based on dailyCustomSchedules or derived) */}
+                      <div className="overflow-y-auto flex-grow">
+                          <table className="min-w-full bg-white rounded-lg shadow-md">
+                              <thead className="bg-indigo-100 sticky top-0 z-10">
+                                  <tr>
+                                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tl-lg">Activity</th>
+                                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Planned</th>
+                                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Type</th>
+                                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tr-lg">Actions</th>
+                                  </tr>
+                              </thead>
+                              <tbody>
+                                  {(() => {
+                                      const dateKey = formatDateToYYYYMMDD(selectedPlannerDate);
+                                      let currentDayActivities = dailyCustomSchedules[dateKey];
+
+                                      if (!currentDayActivities) {
+                                          currentDayActivities = generateScheduleForDate(selectedPlannerDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates);
+                                      }
+
+                                      const groupedDailyActivities = currentDayActivities.reduce((acc, activity) => {
+                                          const group = getTimeOfDayGroup(activity.plannedStart);
+                                          if (!acc[group]) { acc[group] = []; }
+                                          acc[group].push(activity);
+                                          return acc;
+                                      }, {});
+
+                                      return timeOfDayOrder.map(groupName => {
+                                          const activitiesInGroup = groupedDailyActivities[groupName];
+                                          if (!activitiesInGroup || activitiesInGroup.length === 0) return null;
+
+                                          const isCollapsed = collapsedSections[`daily-editor-${groupName}`];
+
+                                          return (
+                                              <React.Fragment key={`daily-editor-${groupName}`}>
+                                                  <tr className="bg-indigo-200 sticky top-12 z-10">
+                                                      <td colSpan="4" className="py-2 px-4 text-left text-md font-bold text-indigo-800 cursor-pointer" onClick={() => toggleSection(`daily-editor-${groupName}`)}>
+                                                          {groupName.replace('-', ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                                                          <span className="ml-2">{isCollapsed ? '▼' : '▲'}</span>
+                                                      </td>
+                                                  </tr>
+                                                  {!isCollapsed && activitiesInGroup.map((activity) => (
+                                                      <tr key={activity.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                                          <td className="py-3 px-4 text-sm font-medium text-gray-700">
+                                                              {activity.activity}
+                                                              <span className="block text-xs text-gray-500">
+                                                                  {activity.plannedStart} - {activity.plannedEnd}
+                                                              </span>
+                                                          </td>
+                                                          <td className="py-3 px-4 text-sm text-gray-600">
+                                                              {getPlannedDuration(activity.plannedStart, activity.plannedEnd, selectedPlannerDate).toFixed(2)} hrs
+                                                          </td>
+                                                          <td className="py-3 px-4 text-sm text-gray-600 capitalize">{activity.type}</td>
+                                                          <td className="py-3 px-4 text-sm">
+                                                              <div className="flex space-x-2">
+                                                                  <button
+                                                                      onClick={() => handleEditDailyActivity(activity)}
+                                                                      className="p-2 bg-blue-500 text-white rounded-md text-xs hover:bg-blue-600 transition-colors duration-200"
+                                                                      aria-label={`Edit ${activity.activity}`}
+                                                                  >
+                                                                      <Edit size={16} />
+                                                                  </button>
+                                                                  <button
+                                                                      onClick={() => handleDeleteDailyActivity(activity.id)}
+                                                                      className="p-2 bg-red-500 text-white rounded-md text-xs hover:bg-red-600 transition-colors duration-200"
+                                                                      aria-label={`Delete ${activity.activity}`}
+                                                                  >
+                                                                      <Trash2 size={16} />
+                                                                  </button>
+                                                              </div>
+                                                          </td>
+                                                      </tr>
+                                                  ))}
+                                              </React.Fragment>
+                                          );
+                                      });
+                                  })()}
+                              </tbody>
+                          </table>
+                      </div>
+
+                      {/* Visual Planner Timeline for Daily Editor */}
+                      <div ref={plannerTimelineRef} className="relative w-full h-[1440px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200 mt-6">
+                      {/* Time Grid Lines and Labels */}
+                      {[...Array(25)].map((_, hour) => (
+                          <React.Fragment key={hour}>
+                          <div
+                              className="absolute left-0 w-full border-t border-gray-200 text-xs text-gray-500 pl-2"
+                              style={{ top: `${(hour / 24) * 100}%`, height: '1px' }}
+                          >
+                              <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:00</span>
+                          </div>
+                          {hour < 24 && (
+                              <>
+                              <div
+                                  className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                  style={{ top: `${(hour / 24) * 100 + (15 / 1440) * 100}%`, height: '1px' }}
+                              >
+                                  <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:15</span>
+                              </div>
+                              <div
+                                  className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                  style={{ top: `${(hour / 24) * 100 + (30 / 1440) * 100}%`, height: '1px' }}
+                              >
+                                  <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:30</span>
+                              </div>
+                              <div
+                                  className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                  style={{ top: `${(hour / 24) * 100 + (45 / 1440) * 100}%`, height: '1px' }}
+                              >
+                                  <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:45</span>
+                              </div>
+                              </>
+                          )}
+                          </React.Fragment>
+                      ))}
+
+                      {/* Activity Blocks for Daily Editor */}
+                      {dailyCustomSchedules[formatDateToYYYYMMDD(selectedPlannerDate)] && dailyCustomSchedules[formatDateToYYYYMMDD(selectedPlannerDate)].sort((a,b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)).map(activity => {
+                          const { top, height } = calculateBlockStyles(activity);
+                          const activityNameLower = activity.activity.toLowerCase();
+
+                          let bgColor = 'bg-indigo-200';
+                          if (activity.type === 'academic') bgColor = 'bg-blue-200';
+                          if (activity.type === 'spiritual') bgColor = 'bg-green-200';
+                          if (activity.type === 'physical') bgColor = 'bg-red-200';
+                          if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
+
+                          return (
+                          <div
+                              key={activity.id}
+                              className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
+                              ${bgColor}
+                              ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
+                              `}
+                              style={{ top, height }}
+                              onMouseDown={(e) => handleMouseDown(e, activity.id, 'move', true)}
+                              onDoubleClick={() => handleEditDailyActivity(activity)}
+                              title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
+                          >
+                              {/* Top Resize Handle */}
+                              <div
+                              className="absolute top-0 left-0 right-0 h-2 -mt-1 cursor-ns-resize z-30"
+                              onMouseDown={(e) => handleMouseDown(e, activity.id, 'top', true)}
+                              ></div>
+                              <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
+                              <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
+                              {/* Bottom Resize Handle */}
+                              <div
+                              className="absolute bottom-0 left-0 right-0 h-2 -mb-1 cursor-ns-resize z-30"
+                              onMouseDown={(e) => handleMouseDown(e, activity.id, 'bottom', true)}
+                              ></div>
+                          </div>
+                          );
+                      })}
+                      </div>
+                      <p className="text-sm text-gray-500 mt-4">Double-click an activity to edit details. Drag activities to adjust their times. Drag top/bottom edges to resize. Changes here only affect this specific day.</p>
+                  </>
+              )}
+            </div>
+          )}
+
+          {/* Tasks Tab */}
+          {activeTab === 'tasks' && (
+            <div className="flex-grow overflow-y-auto">
+              <h2 className="text-2xl font-semibold text-indigo-800 mb-4">My Projects & Tasks</h2>
+              <p className="text-gray-600 mb-4">
+                Manage your long-term projects and individual tasks here. You can set target dates and track progress.
               </p>
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Object.entries(reportData.summary).map(([type, data]) => (
-                  <div key={type} className="bg-white p-3 rounded-lg shadow-sm">
-                    <h4 className="font-semibold text-indigo-600 capitalize">{type} Activities</h4>
-                    <p className="text-sm text-gray-600">Planned: {(data.planned || 0).toFixed(2)} hrs</p>
-                    <p className="text-sm text-gray-600">Actual: {(data.actual || 0).toFixed(2)} hrs</p>
-                    <div className="mt-2 h-4 bg-gray-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-indigo-400 rounded-full"
-                        style={{ width: `${((data.actual || 0) / Math.max((data.planned || 0), (data.actual || 0), 1)) * 100}%` }}
-                        title={`Actual: ${(data.actual || 0).toFixed(2)} hrs, Planned: ${(data.planned || 0).toFixed(2)} hrs`}
-                      ></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <h3 className="text-xl font-semibold text-indigo-700 mb-4">Detailed Logs</h3>
-            {reportData.summary && Object.values(reportData.summary).some(s => s.activities.length > 0) ? (
-              <div className="overflow-x-auto">
-                <table className="min-w-full bg-white rounded-lg shadow-md">
-                  <thead className="bg-indigo-100">
-                    <tr>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tl-lg">Activity</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Activity Notes</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual Start</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual End</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tr-lg">Duration</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.values(reportData.summary).flatMap(s => s.activities).sort((a,b) => new Date(a.actualStart) - new Date(b.actualStart)).map((log, index) => (
-                      <tr key={index} className="border-b border-gray-200 hover:bg-gray-50">
-                        <td className="py-3 px-4 text-sm font-medium text-gray-700">{log.activity}</td>
-                        <td className="py-3 px-4 text-sm text-gray-600">{log.activityNotes || '-'}</td>
-                        <td className="py-3 px-4 text-sm text-gray-600">{formatDateTime(log.actualStart)}</td>
-                        <td className="py-3 px-4 text-sm text-gray-600">{formatDateTime(log.actualEnd)}</td>
-                        <td className="py-3 px-4 text-sm text-gray-600">{log.actualDuration.toFixed(2)} hrs</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="text-gray-600 text-center py-8">No activities logged for this day.</p>
-            )}
-          </div>
-        )}
-
-        {/* Settings Tab */}
-        {activeTab === 'settings' && (
-          <div className="flex-grow overflow-y-auto">
-            <h2 className="text-2xl font-semibold text-indigo-800 mb-4">Settings</h2>
-
-            {/* Pomodoro Settings */}
-            <div className="bg-indigo-50 rounded-lg p-4 mb-6 shadow-inner">
-              <h3 className="text-xl font-semibold text-indigo-700 mb-4">Pomodoro Settings</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="work" className="block text-sm font-medium text-gray-700 mb-1">Work Duration (minutes)</label>
-                  <input
-                    type="number"
-                    id="work"
-                    name="work"
-                    value={pomodoroSettings.work}
-                    onChange={handlePomodoroSettingChange}
-                    className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="shortBreak" className="block text-sm font-medium text-gray-700 mb-1">Short Break (minutes)</label>
-                  <input
-                    type="number"
-                    id="shortBreak"
-                    name="shortBreak"
-                    value={pomodoroSettings.shortBreak}
-                    onChange={handlePomodoroSettingChange}
-                    className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="longBreak" className="block text-sm font-medium text-gray-700 mb-1">Long Break (minutes)</label>
-                  <input
-                    type="number"
-                    id="longBreak"
-                    name="longBreak"
-                    value={pomodoroSettings.longBreak}
-                    onChange={handlePomodoroSettingChange}
-                    className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="longBreakInterval" className="block text-sm font-medium text-gray-700 mb-1">Long Break Interval (Pomodoros)</label>
-                  <input
-                    type="number"
-                    id="longBreakInterval"
-                    name="longBreakInterval"
-                    value={pomodoroSettings.longBreakInterval}
-                    onChange={handlePomodoroSettingChange}
-                    className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="reminderTime" className="block text-sm font-medium text-gray-700 mb-1">Activity Reminder (minutes before)</label>
-                  <input
-                    type="number"
-                    id="reminderTime"
-                    name="reminderTime"
-                    value={pomodoroSettings.reminderTime}
-                    onChange={handlePomodoroSettingChange}
-                    className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-              <p className="text-sm text-gray-500 mt-4">Changes are saved automatically.</p>
-            </div>
-
-            {/* Data Management */}
-            <div className="bg-indigo-50 rounded-lg p-4 shadow-inner">
-              <h3 className="text-xl font-semibold text-indigo-700 mb-4">Data Management</h3>
-              <div className="mb-4">
-                <h4 className="font-medium text-gray-700 mb-2">Export Data</h4>
-                <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
-                  {Object.keys(dataManagementOptions.export).map(key => (
-                    <label key={key} className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={dataManagementOptions.export[key]}
-                        onChange={(e) => handleDataOptionChange('export', key, e.target.checked)}
-                        className="form-checkbox h-4 w-4 text-indigo-600 rounded"
-                      />
-                      <span className="ml-2 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                    </label>
-                  ))}
-                </div>
+              <div className="flex space-x-4 mb-4">
                 <button
-                  onClick={handleExportData}
-                  className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-md shadow-md hover:bg-blue-600 transition-colors duration-200 flex items-center"
+                  onClick={handleAddTask}
+                  className="px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center"
+                  aria-label="Add New Task"
                 >
-                  <Download size={20} className="mr-2" /> Export Selected Data
+                  <Plus size={20} className="mr-2" /> Add New Task
+                </button>
+                <button
+                  onClick={() => setShowEisenhowerMatrix(prev => !prev)}
+                  className="px-4 py-2 bg-purple-500 text-white rounded-md shadow-md hover:bg-purple-600 transition-colors duration-200 flex items-center"
+                  aria-label={showEisenhowerMatrix ? "Show All Tasks" : "Show Eisenhower Matrix"}
+                >
+                  {showEisenhowerMatrix ? (
+                    <>
+                      <CalendarDays size={20} className="mr-2" /> Show All Tasks
+                    </>
+                  ) : (
+                    <>
+                      <BarChart2 size={20} className="mr-2" /> Show Eisenhower Matrix
+                    </>
+                  )}
                 </button>
               </div>
 
-              <div>
-                <h4 className="font-medium text-gray-700 mb-2">Import Data</h4>
-                <p className="text-sm text-red-600 mb-2">Warning: Importing data will overwrite existing data for selected categories.</p>
-                <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
-                  {Object.keys(dataManagementOptions.import).map(key => (
-                    <label key={key} className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={dataManagementOptions.import[key]}
-                        onChange={(e) => handleDataOptionChange('import', key, e.target.checked)}
-                        className="form-checkbox h-4 w-4 text-indigo-600 rounded"
-                      />
-                      <span className="ml-2 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                    </label>
+              {showEisenhowerMatrix ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {['Do Now', 'Schedule', 'Delegate', 'Eliminate'].map(quadrant => (
+                    <div key={quadrant} className={`p-4 rounded-lg shadow-md
+                      ${quadrant === 'Do Now' ? 'bg-red-100 border-l-4 border-red-500' : ''}
+                      ${quadrant === 'Schedule' ? 'bg-blue-100 border-l-4 border-blue-500' : ''}
+                      ${quadrant === 'Delegate' ? 'bg-yellow-100 border-l-4 border-yellow-500' : ''}
+                      ${quadrant === 'Eliminate' ? 'bg-gray-100 border-l-4 border-gray-500' : ''}
+                    `}>
+                      <h3 className="text-lg font-bold mb-3">
+                        {quadrant}
+                        <span className="block text-sm font-normal text-gray-600">
+                          {quadrant === 'Do Now' && 'Urgent & Important'}
+                          {quadrant === 'Schedule' && 'Important, Not Urgent'}
+                          {quadrant === 'Delegate' && 'Urgent, Not Important'}
+                          {quadrant === 'Eliminate' && 'Not Urgent, Not Important'}
+                        </span>
+                      </h3>
+                      {eisenhowerTasks[quadrant] && eisenhowerTasks[quadrant].length > 0 ? (
+                        <ul className="space-y-2">
+                          {eisenhowerTasks[quadrant].map(task => (
+                            <li key={task.id} className="bg-white p-3 rounded-md shadow-sm flex items-center justify-between">
+                              <span className="font-medium text-gray-800">{task.name}</span>
+                              <div className="flex space-x-1">
+                                  <button
+                                    onClick={() => handleEditTask(task)}
+                                    className="p-1 text-blue-500 hover:text-blue-700 transition-colors"
+                                    aria-label={`Edit ${task.name}`}
+                                  >
+                                    <Edit size={16} />
+                                  </button>
+                                  <button
+                                      onClick={() => handleSaveTask({...task, actualCompletionDate: formatDateToYYYYMMDD(new Date()), status: 'completed'})}
+                                      className="p-1 text-green-500 hover:text-green-700 transition-colors"
+                                      aria-label={`Mark ${task.name} as complete`}
+                                  >
+                                      <CheckCircle size={16} />
+                                  </button>
+                                  <button
+                                    onClick={() => openAssignTaskModal(null, { taskId: task.id, subtaskId: null })}
+                                    className="p-1 text-indigo-500 hover:text-indigo-700 transition-colors"
+                                    aria-label={`Assign ${task.name} to schedule`}
+                                  >
+                                    <Link size={16} />
+                                  </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-gray-500">No tasks in this quadrant.</p>
+                      )}
+                    </div>
                   ))}
                 </div>
-                <input
-                  type="file"
-                  accept=".json"
-                  onChange={handleImportData}
-                  className="mt-4 block w-full text-sm text-gray-500
-                    file:mr-4 file:py-2 file:px-4
-                    file:rounded-md file:border-0
-                    file:text-sm file:font-semibold
-                    file:bg-indigo-50 file:text-indigo-700
-                    hover:file:bg-indigo-100"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-      <footer className="text-gray-600 text-sm mt-8 flex-shrink-0">
-        Built with React and Tailwind CSS. Data saved in browser's local storage.
-      </footer>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full bg-white rounded-lg shadow-md">
+                    <thead className="bg-indigo-100">
+                      <tr>
+                        <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tl-lg">Task Name</th>
+                        <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Type</th>
+                        <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Target Start</th>
+                        <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Deadline</th>
+                        <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Expected Duration</th>
+                        <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Urgency</th>
+                        <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Importance</th>
+                        <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Status</th>
+                        <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tr-lg">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {projectTasks.sort((a, b) => {
+                        const dateA = a.deadlineDate ? new Date(a.deadlineDate) : new Date('9999-12-31');
+                        const dateB = b.deadlineDate ? new Date(b.deadlineDate) : new Date('9999-12-31');
+                        return dateA - dateB;
+                      }).map((task) => {
+                        let taskStatus = task.status;
+                        const today = new Date();
+                        today.setHours(0,0,0,0);
 
-      {/* Planner Modal */}
-      {isPlannerModalOpen && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md max-h-full overflow-y-auto relative">
-            <button
-              onClick={handleCancelEdit}
-              className="absolute top-3 right-3 p-1 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
-              aria-label="Close modal"
-            >
-              <X size={20} />
-            </button>
-            <h3 className="text-xl font-semibold text-indigo-700 mb-4">
-              {editingActivity?.isNew ? 'Add New Activity' : 'Edit Activity'}
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="activityName" className="block text-sm font-medium text-gray-700">Activity Name</label>
-                <input
-                  type="text"
-                  id="activityName"
-                  value={editingActivity?.activity || ''}
-                  onChange={(e) => setEditingActivity(prev => ({ ...prev, activity: e.target.value }))}
-                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                />
-              </div>
-              <div>
-                <label htmlFor="plannedStart" className="block text-sm font-medium text-gray-700">Planned Start (HH:MM)</label>
-                <input
-                  type="time"
-                  id="plannedStart"
-                  value={editingActivity?.plannedStart || '09:00'}
-                  onChange={(e) => setEditingActivity(prev => ({ ...prev, plannedStart: e.target.value }))}
-                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                />
-              </div>
-              <div>
-                <label htmlFor="plannedEnd" className="block text-sm font-medium text-gray-700">Planned End (HH:MM)</label>
-                <input
-                  type="time"
-                  id="plannedEnd"
-                  value={editingActivity?.plannedEnd || '10:00'}
-                  onChange={(e) => setEditingActivity(prev => ({ ...prev, plannedEnd: e.target.value }))}
-                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                />
-              </div>
-              <div>
-                <label htmlFor="activityType" className="block text-sm font-medium text-gray-700">Type</label>
-                <select
-                  id="activityType"
-                  value={editingActivity?.type || 'personal'}
-                  onChange={(e) => setEditingActivity(prev => ({ ...prev, type: e.target.value }))}
-                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                >
-                  <option value="personal">Personal</option>
-                  <option value="academic">Academic</option>
-                  <option value="spiritual">Spiritual</option>
-                  <option value="physical">Physical</option>
-                </select>
-              </div>
-              {!isEditingDailySchedule && (
-                <div>
-                  <label htmlFor="recurrenceType" className="block text-sm font-medium text-gray-700">Recurrence</label>
-                  <select
-                    id="recurrenceType"
-                    value={editingActivity?.recurrenceType || 'none'}
-                    onChange={(e) => setEditingActivity(prev => ({ ...prev, recurrenceType: e.target.value, recurrenceDays: e.target.value === 'daily' ? [] : prev.recurrenceDays }))}
-                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                  >
-                    <option value="none">Does not repeat</option>
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                  </select>
+                        const deadline = task.deadlineDate ? new Date(task.deadlineDate) : null;
+                        if (deadline) deadline.setHours(0,0,0,0);
+
+                        const targetStart = task.targetStartDate ? new Date(task.targetStartDate) : null;
+                        if (targetStart) targetStart.setHours(0,0,0,0);
+
+                        if (task.actualCompletionDate) { taskStatus = 'completed'; }
+                        else if (deadline && today > deadline && task.status !== 'completed') { taskStatus = 'overdue'; }
+                        else if (task.status === 'pending' && targetStart && today >= targetStart) { taskStatus = 'in-progress'; }
+
+                        const isDueSoon = !task.actualCompletionDate && deadline && (deadline.getTime() - today.getTime() <= 7 * 24 * 60 * 60 * 1000) && today <= deadline;
+                        const isOverdue = taskStatus === 'overdue';
+
+                        return (
+                          <tr key={task.id} className={`border-b border-gray-200 hover:bg-gray-50
+                            ${isOverdue ? 'bg-red-50' : isDueSoon ? 'bg-yellow-50' : ''}
+                          `}>
+                            <td className="py-3 px-4 text-sm font-medium text-gray-700">
+                              {task.name}
+                              {(isDueSoon || isOverdue) && (
+                                <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold
+                                  ${isOverdue ? 'bg-red-400 text-white' : 'bg-yellow-400 text-gray-800'}
+                                `}>
+                                  {isOverdue ? 'Overdue' : 'Due Soon'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-sm text-gray-600 capitalize">{task.type}</td>
+                            <td className="py-3 px-4 text-sm text-gray-600">{task.targetStartDate || '-'}</td>
+                            <td className="py-3 px-4 text-sm text-gray-600">{task.deadlineDate || '-'}</td>
+                            <td className="py-3 px-4 text-sm text-gray-600">{task.expectedDurationHours ? `${task.expectedDurationHours} hrs` : '-'}</td>
+                            <td className="py-3 px-4 text-sm text-gray-600 capitalize">{task.urgency || '-'}</td>
+                            <td className="py-3 px-4 text-sm text-gray-600 capitalize">{task.importance || '-'}</td>
+                            <td className="py-3 px-4 text-sm text-gray-600 capitalize">
+                              <span className={`font-semibold
+                                ${taskStatus === 'completed' ? 'text-green-600' : ''}
+                                ${taskStatus === 'overdue' ? 'text-red-600' : ''}
+                                ${taskStatus === 'in-progress' ? 'text-blue-600' : ''}
+                              `}>
+                                {taskStatus.replace('-', ' ')}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-sm">
+                              <div className="flex space-x-2">
+                                <button
+                                  onClick={() => handleEditTask(task)}
+                                  className="p-2 bg-blue-500 text-white rounded-md text-xs hover:bg-blue-600 transition-colors duration-200"
+                                  aria-label={`Edit ${task.name}`}
+                                >
+                                  <Edit size={16} />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteTask(task.id)}
+                                  className="p-2 bg-red-500 text-white rounded-md text-xs hover:bg-red-600 transition-colors duration-200"
+                                  aria-label={`Delete ${task.name}`}
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                                {!task.actualCompletionDate && taskStatus !== 'completed' && (
+                                    <button
+                                        onClick={() => handleSaveTask({...task, actualCompletionDate: formatDateToYYYYMMDD(new Date()), status: 'completed'})}
+                                        className="p-2 bg-green-500 text-white rounded-md text-xs hover:bg-green-600 transition-colors duration-200"
+                                        aria-label={`Mark ${task.name} as complete`}
+                                    >
+                                        <CheckCircle size={16} />
+                                    </button>
+                                )}
+                                <button
+                                  onClick={() => openAssignTaskModal(null, { taskId: task.id, subtaskId: null })}
+                                  className="p-2 bg-indigo-500 text-white rounded-md text-xs hover:bg-indigo-600 transition-colors duration-200"
+                                  aria-label={`Assign ${task.name} to schedule`}
+                                >
+                                  <Link size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
-              {!isEditingDailySchedule && editingActivity?.recurrenceType === 'weekly' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Repeat on</label>
-                  <div className="mt-1 grid grid-cols-3 gap-2">
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
-                      <label key={day} className="flex items-center">
+            </div>
+          )}
+
+
+          {/* Report Tab */}
+          {activeTab === 'report' && (
+            <div className="flex-grow overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <button
+                  onClick={() => setReportDate(prev => { const newDate = new Date(prev); newDate.setDate(newDate.getDate() - 1); return newDate; })}
+                  className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
+                  aria-label="Previous day"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+                <h2 className="text-2xl font-semibold text-indigo-800">
+                  Report for {reportDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                </h2>
+                <button
+                  onClick={() => setReportDate(prev => { const newDate = new Date(prev); newDate.setDate(newDate.getDate() + 1); return newDate; })}
+                  className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
+                  aria-label="Next day"
+                >
+                  <ChevronRight size={20} />
+                </button>
+              </div>
+
+              <div className="bg-indigo-50 rounded-lg p-4 mb-6 shadow-inner">
+                <h3 className="text-xl font-semibold text-indigo-700 mb-2">Summary</h3>
+                <p className="text-lg text-gray-700">
+                  Total Actual Deep Work Mode Time:{' '}
+                  <span className="font-bold">{(reportData.totalFocused || 0).toFixed(2)} hours</span>
+                </p>
+                <p className="text-lg text-gray-700">
+                  Total Actual Time (All Activities):{' '}
+                  <span className="font-bold">{(reportData.totalActualTimeAllActivities || 0).toFixed(2)} hours</span>
+                </p>
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {Object.entries(reportData.summary).map(([type, data]) => (
+                    <div key={type} className="bg-white p-3 rounded-lg shadow-sm">
+                      <h4 className="font-semibold text-indigo-600 capitalize">{type} Activities</h4>
+                      <p className="text-sm text-gray-600">Planned: {(data.planned || 0).toFixed(2)} hrs</p>
+                      <p className="text-sm text-gray-600">Actual: {(data.actual || 0).toFixed(2)} hrs</p>
+                      <div className="mt-2 h-4 bg-gray-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-indigo-400 rounded-full"
+                          style={{ width: `${((data.actual || 0) / Math.max((data.planned || 0), (data.actual || 0), 1)) * 100}%` }}
+                          title={`Actual: ${(data.actual || 0).toFixed(2)} hrs, Planned: ${(data.planned || 0).toFixed(2)} hrs`}
+                        ></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <h3 className="text-xl font-semibold text-indigo-700 mb-4">Detailed Logs</h3>
+              {reportData.summary && Object.values(reportData.summary).some(s => s.activities.length > 0) ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full bg-white rounded-lg shadow-md">
+                    <thead className="bg-indigo-100">
+                      <tr>
+                        <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tl-lg">Activity</th>
+                        <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Activity Notes</th>
+                        <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual Start</th>
+                        <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual End</th>
+                        <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tr-lg">Duration</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.values(reportData.summary).flatMap(s => s.activities).sort((a,b) => new Date(a.actualStart) - new Date(b.actualStart)).map((log, index) => (
+                        <tr key={index} className="border-b border-gray-200 hover:bg-gray-50">
+                          <td className="py-3 px-4 text-sm font-medium text-gray-700">{log.activity}</td>
+                          <td className="py-3 px-4 text-sm text-gray-600">{log.activityNotes || '-'}</td>
+                          <td className="py-3 px-4 text-sm text-gray-600">{formatDateTime(log.actualStart)}</td>
+                          <td className="py-3 px-4 text-sm text-gray-600">{formatDateTime(log.actualEnd)}</td>
+                          <td className="py-3 px-4 text-sm text-gray-600">{log.actualDuration.toFixed(2)} hrs</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-gray-600 text-center py-8">No activities logged for this day.</p>
+              )}
+            </div>
+          )}
+
+          {/* Settings Tab */}
+          {activeTab === 'settings' && (
+            <div className="flex-grow overflow-y-auto">
+              <h2 className="text-2xl font-semibold text-indigo-800 mb-4">Settings</h2>
+
+              {/* Pomodoro Settings */}
+              <div className="bg-indigo-50 rounded-lg p-4 mb-6 shadow-inner">
+                <h3 className="text-xl font-semibold text-indigo-700 mb-4">Pomodoro Settings</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="work" className="block text-sm font-medium text-gray-700 mb-1">Work Duration (minutes)</label>
+                    <input
+                      type="number"
+                      id="work"
+                      name="work"
+                      value={pomodoroSettings.work}
+                      onChange={handlePomodoroSettingChange}
+                      className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="shortBreak" className="block text-sm font-medium text-gray-700 mb-1">Short Break (minutes)</label>
+                    <input
+                      type="number"
+                      id="shortBreak"
+                      name="shortBreak"
+                      value={pomodoroSettings.shortBreak}
+                      onChange={handlePomodoroSettingChange}
+                      className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="longBreak" className="block text-sm font-medium text-gray-700 mb-1">Long Break (minutes)</label>
+                    <input
+                      type="number"
+                      id="longBreak"
+                      name="longBreak"
+                      value={pomodoroSettings.longBreak}
+                      onChange={handlePomodoroSettingChange}
+                      className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="longBreakInterval" className="block text-sm font-medium text-gray-700 mb-1">Long Break Interval (Pomodoros)</label>
+                    <input
+                      type="number"
+                      id="longBreakInterval"
+                      name="longBreakInterval"
+                      value={pomodoroSettings.longBreakInterval}
+                      onChange={handlePomodoroSettingChange}
+                      className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="reminderTime" className="block text-sm font-medium text-gray-700 mb-1">Activity Reminder (minutes before)</label>
+                    <input
+                      type="number"
+                      id="reminderTime"
+                      name="reminderTime"
+                      value={pomodoroSettings.reminderTime}
+                      onChange={handlePomodoroSettingChange}
+                      className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+                <p className="text-sm text-gray-500 mt-4">Changes are saved automatically.</p>
+              </div>
+
+              {/* Data Management */}
+              <div className="bg-indigo-50 rounded-lg p-4 shadow-inner">
+                <h3 className="text-xl font-semibold text-indigo-700 mb-4">Data Management</h3>
+                <div className="mb-4">
+                  <h4 className="font-medium text-gray-700 mb-2">Export Data</h4>
+                  <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
+                    {Object.keys(dataManagementOptions.export).map(key => (
+                      <label key={key} className="flex items-center">
                         <input
                           type="checkbox"
-                          checked={editingActivity.recurrenceDays.includes(index)}
-                          onChange={(e) => {
-                            const newRecurrenceDays = e.target.checked
-                              ? [...editingActivity.recurrenceDays, index]
-                              : editingActivity.recurrenceDays.filter(d => d !== index);
-                            setEditingActivity(prev => ({ ...prev, recurrenceDays: newRecurrenceDays.sort((a,b) => a-b) }));
-                          }}
+                          checked={dataManagementOptions.export[key]}
+                          onChange={(e) => handleDataOptionChange('export', key, e.target.checked)}
                           className="form-checkbox h-4 w-4 text-indigo-600 rounded"
                         />
-                        <span className="ml-2 text-sm text-gray-700">{day}</span>
+                        <span className="ml-2 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
                       </label>
                     ))}
                   </div>
-                </div>
-              )}
-              <div>
-                <label htmlFor="constraintType" className="block text-sm font-medium text-gray-700">Constraint Type</label>
-                <select
-                  id="constraintType"
-                  value={editingActivity?.constraintType || 'adjustable'}
-                  onChange={(e) => setEditingActivity(prev => ({ ...prev, constraintType: e.target.value }))}
-                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                >
-                  <option value="hard">Hard (Non-negotiable)</option>
-                  <option value="adjustable">Adjustable (Can be shifted/shrunk)</option>
-                  <option value="removable">Removable (Can be deleted in conflict)</option>
-                </select>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end space-x-3">
-              <button
-                onClick={handleCancelEdit}
-                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
-              >
-                <X size={18} className="inline-block mr-1" /> Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (isEditingDailySchedule) {
-                    handleSaveDailyActivity(editingActivity);
-                  } else {
-                    handleSaveTemplateActivity(editingActivity);
-                  }
-                }}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-              >
-                <Save size={18} className="inline-block mr-1" /> Save Activity
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Task Modal */}
-      {isTaskModalOpen && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md max-h-full overflow-y-auto relative">
-            <button
-              onClick={handleCancelTaskEdit}
-              className="absolute top-3 right-3 p-1 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
-              aria-label="Close modal"
-            >
-              <X size={20} />
-            </button>
-            <h3 className="text-xl font-semibold text-indigo-700 mb-4">
-              {editingTask?.isNew ? 'Add New Task' : 'Edit Task'}
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="taskName" className="block text-sm font-medium text-gray-700">Task Name</label>
-                <input
-                  type="text"
-                  id="taskName"
-                  value={editingTask?.name || ''}
-                  onChange={(e) => setEditingTask(prev => ({ ...prev, name: e.target.value }))}
-                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                />
-              </div>
-              <div>
-                <label htmlFor="taskDescription" className="block text-sm font-medium text-gray-700">Description</label>
-                <textarea
-                  id="taskDescription"
-                  value={editingTask?.description || ''}
-                  onChange={(e) => setEditingTask(prev => ({ ...prev, description: e.target.value }))}
-                  rows="3"
-                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                ></textarea>
-              </div>
-              <div>
-                <label htmlFor="taskType" className="block text-sm font-medium text-gray-700">Type</label>
-                <select
-                  id="taskType"
-                  value={editingTask?.type || 'personal'}
-                  onChange={(e) => setEditingTask(prev => ({ ...prev, type: e.target.value }))}
-                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                >
-                  <option value="personal">Personal</option>
-                  <option value="academic">Academic</option>
-                  <option value="spiritual">Spiritual</option>
-                  <option value="physical">Physical</option>
-                  <option value="work">Work</option>
-                  <option value="project">Project</option>
-                </select>
-              </div>
-              <div>
-                <label htmlFor="targetStartDate" className="block text-sm font-medium text-gray-700">Target Start Date</label>
-                <input
-                  type="date"
-                  id="targetStartDate"
-                  value={editingTask?.targetStartDate || ''}
-                  onChange={(e) => setEditingTask(prev => ({ ...prev, targetStartDate: e.target.value }))}
-                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                />
-              </div>
-              <div>
-                <label htmlFor="deadlineDate" className="block text-sm font-medium text-gray-700">Deadline Date</label>
-                <input
-                  type="date"
-                  id="deadlineDate"
-                  value={editingTask?.deadlineDate || ''}
-                  onChange={(e) => setEditingTask(prev => ({ ...prev, deadlineDate: e.target.value }))}
-                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                />
-              </div>
-              <div>
-                <label htmlFor="expectedDurationHours" className="block text-sm font-medium text-gray-700">Expected Duration (Hours)</label>
-                <input
-                  type="number"
-                  id="expectedDurationHours"
-                  value={editingTask?.expectedDurationHours || 0}
-                  onChange={(e) => setEditingTask(prev => ({ ...prev, expectedDurationHours: Number(e.target.value) }))}
-                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                />
-              </div>
-              <div>
-                <label htmlFor="urgency" className="block text-sm font-medium text-gray-700">Urgency</label>
-                <select
-                  id="urgency"
-                  value={editingTask?.urgency || 'medium'}
-                  onChange={(e) => setEditingTask(prev => ({ ...prev, urgency: e.target.value }))}
-                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="critical">Critical</option>
-                </select>
-              </div>
-              <div>
-                <label htmlFor="importance" className="block text-sm font-medium text-gray-700">Importance</label>
-                <select
-                  id="importance"
-                  value={editingTask?.importance || 'medium'}
-                  onChange={(e) => setEditingTask(prev => ({ ...prev, importance: e.target.value }))}
-                  className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="critical">Critical</option>
-                </select>
-              </div>
-              {editingTask && !editingTask.isNew && (
-                <>
-                  <div>
-                    <label htmlFor="taskStatus" className="block text-sm font-medium text-gray-700">Status</label>
-                    <select
-                      id="taskStatus"
-                      value={editingTask?.status || 'pending'}
-                      onChange={(e) => setEditingTask(prev => ({ ...prev, status: e.target.value }))}
-                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                    >
-                      <option value="pending">Pending</option>
-                      <option value="in-progress">In Progress</option>
-                      <option value="completed">Completed</option>
-                      <option value="overdue">Overdue</option>
-                    </select>
-                  </div>
-                  {editingTask.status === 'completed' && (
-                    <div>
-                      <label htmlFor="actualCompletionDate" className="block text-sm font-medium text-gray-700">Actual Completion Date</label>
-                      <input
-                        type="date"
-                        id="actualCompletionDate"
-                        value={editingTask?.actualCompletionDate || ''}
-                        onChange={(e) => setEditingTask(prev => ({ ...prev, actualCompletionDate: e.target.value }))}
-                        className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                      />
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* Subtasks Section */}
-              <div className="border-t pt-4 mt-4">
-                <h4 className="text-lg font-semibold text-indigo-700 mb-2">Subtasks</h4>
-                <div className="flex space-x-2 mb-3">
-                  <input
-                    type="text"
-                    id="newSubtaskName"
-                    placeholder="New subtask name"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && e.target.value.trim()) {
-                        handleAddSubtask(editingTask.id, e.target.value.trim());
-                        e.target.value = '';
-                      }
-                    }}
-                    className="flex-grow p-2 border border-gray-300 rounded-md"
-                  />
                   <button
-                    onClick={() => {
-                      const input = document.getElementById('newSubtaskName');
-                      if (input.value.trim()) {
-                        handleAddSubtask(editingTask.id, input.value.trim());
-                        input.value = '';
-                      }
-                    }}
-                    className="px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600 transition-colors"
+                    onClick={handleExportData}
+                    className="mt-4 px-4 py-2 bg-blue-500 text-white rounded-md shadow-md hover:bg-blue-600 transition-colors duration-200 flex items-center"
                   >
-                    Add
+                    <Download size={20} className="mr-2" /> Export Selected Data
                   </button>
                 </div>
-                {editingTask?.subtasks && editingTask.subtasks.length > 0 ? (
-                  <ul className="space-y-2">
-                    {editingTask.subtasks.map(subtask => (
-                      <li key={subtask.id} className="flex items-center justify-between bg-gray-50 p-2 rounded-md">
-                        <div className="flex items-center flex-grow">
+
+                <div>
+                  <h4 className="font-medium text-gray-700 mb-2">Import Data</h4>
+                  <p className="text-sm text-red-600 mb-2">Warning: Importing data will overwrite existing data for selected categories.</p>
+                  <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
+                    {Object.keys(dataManagementOptions.import).map(key => (
+                      <label key={key} className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={dataManagementOptions.import[key]}
+                          onChange={(e) => handleDataOptionChange('import', key, e.target.checked)}
+                          className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                        />
+                        <span className="ml-2 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportData}
+                    className="mt-4 block w-full text-sm text-gray-500
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded-md file:border-0
+                      file:text-sm file:font-semibold
+                      file:bg-indigo-50 file:text-indigo-700
+                      hover:file:bg-indigo-100"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        <footer className="text-gray-600 text-sm mt-8 flex-shrink-0">
+          Built with React and Tailwind CSS. Data saved in browser's local storage.
+        </footer>
+
+        {/* Planner Modal */}
+        {isPlannerModalOpen && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md max-h-full overflow-y-auto relative">
+              <button
+                onClick={handleCancelEdit}
+                className="absolute top-3 right-3 p-1 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+                aria-label="Close modal"
+              >
+                <X size={20} />
+              </button>
+              <h3 className="text-xl font-semibold text-indigo-700 mb-4">
+                {editingActivity?.isNew ? 'Add New Activity' : 'Edit Activity'}
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="activityName" className="block text-sm font-medium text-gray-700">Activity Name</label>
+                  <input
+                    type="text"
+                    id="activityName"
+                    value={editingActivity?.activity || ''}
+                    onChange={(e) => setEditingActivity(prev => ({ ...prev, activity: e.target.value }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="plannedStart" className="block text-sm font-medium text-gray-700">Planned Start (HH:MM)</label>
+                  <input
+                    type="time"
+                    id="plannedStart"
+                    value={editingActivity?.plannedStart || '09:00'}
+                    onChange={(e) => setEditingActivity(prev => ({ ...prev, plannedStart: e.target.value }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="plannedEnd" className="block text-sm font-medium text-gray-700">Planned End (HH:MM)</label>
+                  <input
+                    type="time"
+                    id="plannedEnd"
+                    value={editingActivity?.plannedEnd || '10:00'}
+                    onChange={(e) => setEditingActivity(prev => ({ ...prev, plannedEnd: e.target.value }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="activityType" className="block text-sm font-medium text-gray-700">Type</label>
+                  <select
+                    id="activityType"
+                    value={editingActivity?.type || 'personal'}
+                    onChange={(e) => setEditingActivity(prev => ({ ...prev, type: e.target.value }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                  >
+                    <option value="personal">Personal</option>
+                    <option value="academic">Academic</option>
+                    <option value="spiritual">Spiritual</option>
+                    <option value="physical">Physical</option>
+                  </select>
+                </div>
+                {!isEditingDailySchedule && (
+                  <div>
+                    <label htmlFor="recurrenceType" className="block text-sm font-medium text-gray-700">Recurrence</label>
+                    <select
+                      id="recurrenceType"
+                      value={editingActivity?.recurrenceType || 'none'}
+                      onChange={(e) => setEditingActivity(prev => ({ ...prev, recurrenceType: e.target.value, recurrenceDays: e.target.value === 'daily' ? [] : prev.recurrenceDays }))}
+                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                    >
+                      <option value="none">Does not repeat</option>
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                    </select>
+                  </div>
+                )}
+                {!isEditingDailySchedule && editingActivity?.recurrenceType === 'weekly' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Repeat on</label>
+                    <div className="mt-1 grid grid-cols-3 gap-2">
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+                        <label key={day} className="flex items-center">
                           <input
                             type="checkbox"
-                            checked={subtask.completed}
-                            onChange={() => handleToggleSubtaskCompletion(editingTask.id, subtask.id)}
-                            className="mr-2 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                            checked={editingActivity.recurrenceDays.includes(index)}
+                            onChange={(e) => {
+                              const newRecurrenceDays = e.target.checked
+                                ? [...editingActivity.recurrenceDays, index]
+                                : editingActivity.recurrenceDays.filter(d => d !== index);
+                              setEditingActivity(prev => ({ ...prev, recurrenceDays: newRecurrenceDays.sort((a,b) => a-b) }));
+                            }}
+                            className="form-checkbox h-4 w-4 text-indigo-600 rounded"
                           />
-                          {editingSubtaskNameId === subtask.id ? (
-                            <input
-                              type="text"
-                              value={subtask.name}
-                              onChange={(e) => handleEditSubtaskName(editingTask.id, subtask.id, e.target.value)}
-                              onBlur={() => setEditingSubtaskNameId(null)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  setEditingSubtaskNameId(null);
-                                }
-                              }}
-                              className="border-b border-indigo-400 focus:outline-none focus:border-indigo-600 text-sm bg-transparent w-full"
-                              autoFocus
-                            />
-                          ) : (
-                            <span
-                              onClick={() => setEditingSubtaskNameId(subtask.id)}
-                              className={`cursor-pointer text-sm flex-grow ${subtask.completed ? 'line-through text-gray-500' : 'text-gray-700'}`}
-                            >
-                              {subtask.name}
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => handleDeleteSubtask(editingTask.id, subtask.id)}
-                          className="p-1 text-red-500 hover:text-red-700 transition-colors"
-                          aria-label={`Delete subtask ${subtask.name}`}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-gray-500">No subtasks added yet.</p>
+                          <span className="ml-2 text-sm text-gray-700">{day}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 )}
+                <div>
+                  <label htmlFor="constraintType" className="block text-sm font-medium text-gray-700">Constraint Type</label>
+                  <select
+                    id="constraintType"
+                    value={editingActivity?.constraintType || 'adjustable'}
+                    onChange={(e) => setEditingActivity(prev => ({ ...prev, constraintType: e.target.value }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                  >
+                    <option value="hard">Hard (Non-negotiable)</option>
+                    <option value="adjustable">Adjustable (Can be shifted/shrunk)</option>
+                    <option value="removable">Removable (Can be deleted in conflict)</option>
+                  </select>
+                </div>
               </div>
-
+              <div className="mt-6 flex justify-end space-x-3">
+                <button
+                  onClick={handleCancelEdit}
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+                >
+                  <X size={18} className="inline-block mr-1" /> Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (isEditingDailySchedule) {
+                      handleSaveDailyActivity(editingActivity);
+                    } else {
+                      handleSaveTemplateActivity(editingActivity);
+                    }
+                  }}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                >
+                  <Save size={18} className="inline-block mr-1" /> Save Activity
+                </button>
+              </div>
             </div>
-            <div className="mt-6 flex justify-end space-x-3">
+          </div>
+        )}
+
+        {/* Task Modal */}
+        {isTaskModalOpen && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md max-h-full overflow-y-auto relative">
               <button
                 onClick={handleCancelTaskEdit}
-                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+                className="absolute top-3 right-3 p-1 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+                aria-label="Close modal"
               >
-                <X size={18} className="inline-block mr-1" /> Cancel
+                <X size={20} />
               </button>
-              <button
-                onClick={() => handleSaveTask(editingTask)}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-              >
-                <Save size={18} className="inline-block mr-1" /> Save Task
-              </button>
+              <h3 className="text-xl font-semibold text-indigo-700 mb-4">
+                {editingTask?.isNew ? 'Add New Task' : 'Edit Task'}
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="taskName" className="block text-sm font-medium text-gray-700">Task Name</label>
+                  <input
+                    type="text"
+                    id="taskName"
+                    value={editingTask?.name || ''}
+                    onChange={(e) => setEditingTask(prev => ({ ...prev, name: e.target.value }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="taskDescription" className="block text-sm font-medium text-gray-700">Description</label>
+                  <textarea
+                    id="taskDescription"
+                    value={editingTask?.description || ''}
+                    onChange={(e) => setEditingTask(prev => ({ ...prev, description: e.target.value }))}
+                    rows="3"
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                  ></textarea>
+                </div>
+                <div>
+                  <label htmlFor="taskType" className="block text-sm font-medium text-gray-700">Type</label>
+                  <select
+                    id="taskType"
+                    value={editingTask?.type || 'personal'}
+                    onChange={(e) => setEditingTask(prev => ({ ...prev, type: e.target.value }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                  >
+                    <option value="personal">Personal</option>
+                    <option value="academic">Academic</option>
+                    <option value="spiritual">Spiritual</option>
+                    <option value="physical">Physical</option>
+                    <option value="work">Work</option>
+                    <option value="project">Project</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="targetStartDate" className="block text-sm font-medium text-gray-700">Target Start Date</label>
+                  <input
+                    type="date"
+                    id="targetStartDate"
+                    value={editingTask?.targetStartDate || ''}
+                    onChange={(e) => setEditingTask(prev => ({ ...prev, targetStartDate: e.target.value }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="deadlineDate" className="block text-sm font-medium text-gray-700">Deadline Date</label>
+                  <input
+                    type="date"
+                    id="deadlineDate"
+                    value={editingTask?.deadlineDate || ''}
+                    onChange={(e) => setEditingTask(prev => ({ ...prev, deadlineDate: e.target.value }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="expectedDurationHours" className="block text-sm font-medium text-gray-700">Expected Duration (Hours)</label>
+                  <input
+                    type="number"
+                    id="expectedDurationHours"
+                    value={editingTask?.expectedDurationHours || 0}
+                    onChange={(e) => setEditingTask(prev => ({ ...prev, expectedDurationHours: Number(e.target.value) }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="urgency" className="block text-sm font-medium text-gray-700">Urgency</label>
+                  <select
+                    id="urgency"
+                    value={editingTask?.urgency || 'medium'}
+                    onChange={(e) => setEditingTask(prev => ({ ...prev, urgency: e.target.value }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="importance" className="block text-sm font-medium text-gray-700">Importance</label>
+                  <select
+                    id="importance"
+                    value={editingTask?.importance || 'medium'}
+                    onChange={(e) => setEditingTask(prev => ({ ...prev, importance: e.target.value }))}
+                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </div>
+                {editingTask && !editingTask.isNew && (
+                  <>
+                    <div>
+                      <label htmlFor="taskStatus" className="block text-sm font-medium text-gray-700">Status</label>
+                      <select
+                        id="taskStatus"
+                        value={editingTask?.status || 'pending'}
+                        onChange={(e) => setEditingTask(prev => ({ ...prev, status: e.target.value }))}
+                        className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="in-progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="overdue">Overdue</option>
+                      </select>
+                    </div>
+                    {editingTask.status === 'completed' && (
+                      <div>
+                        <label htmlFor="actualCompletionDate" className="block text-sm font-medium text-gray-700">Actual Completion Date</label>
+                        <input
+                          type="date"
+                          id="actualCompletionDate"
+                          value={editingTask?.actualCompletionDate || ''}
+                          onChange={(e) => setEditingTask(prev => ({ ...prev, actualCompletionDate: e.target.value }))}
+                          className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Subtasks Section */}
+                <div className="border-t pt-4 mt-4">
+                  <h4 className="text-lg font-semibold text-indigo-700 mb-2">Subtasks</h4>
+                  <div className="flex space-x-2 mb-3">
+                    <input
+                      type="text"
+                      id="newSubtaskName"
+                      placeholder="New subtask name"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && e.target.value.trim()) {
+                          handleAddSubtask(editingTask.id, e.target.value.trim());
+                          e.target.value = '';
+                        }
+                      }}
+                      className="flex-grow p-2 border border-gray-300 rounded-md"
+                    />
+                    <button
+                      onClick={() => {
+                        const input = document.getElementById('newSubtaskName');
+                        if (input.value.trim()) {
+                          handleAddSubtask(editingTask.id, input.value.trim());
+                          input.value = '';
+                        }
+                      }}
+                      className="px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600 transition-colors"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {editingTask?.subtasks && editingTask.subtasks.length > 0 ? (
+                    <ul className="space-y-2">
+                      {editingTask.subtasks.map(subtask => (
+                        <li key={subtask.id} className="flex items-center justify-between bg-gray-50 p-2 rounded-md">
+                          <div className="flex items-center flex-grow">
+                            <input
+                              type="checkbox"
+                              checked={subtask.completed}
+                              onChange={() => handleToggleSubtaskCompletion(editingTask.id, subtask.id)}
+                              className="mr-2 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                            />
+                            {editingSubtaskNameId === subtask.id ? (
+                              <input
+                                type="text"
+                                value={subtask.name}
+                                onChange={(e) => handleEditSubtaskName(editingTask.id, subtask.id, e.target.value)}
+                                onBlur={() => setEditingSubtaskNameId(null)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    setEditingSubtaskNameId(null);
+                                  }
+                                }}
+                                className="border-b border-indigo-400 focus:outline-none focus:border-indigo-600 text-sm bg-transparent w-full"
+                                autoFocus
+                              />
+                            ) : (
+                              <span
+                                onClick={() => setEditingSubtaskNameId(subtask.id)}
+                                className={`cursor-pointer text-sm flex-grow ${subtask.completed ? 'line-through text-gray-500' : 'text-gray-700'}`}
+                              >
+                                {subtask.name}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleDeleteSubtask(editingTask.id, subtask.id)}
+                            className="p-1 text-red-500 hover:text-red-700 transition-colors"
+                            aria-label={`Delete subtask ${subtask.name}`}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-gray-500">No subtasks added yet.</p>
+                  )}
+                </div>
+
+              </div>
+              <div className="mt-6 flex justify-end space-x-3">
+                <button
+                  onClick={handleCancelTaskEdit}
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+                >
+                  <X size={18} className="inline-block mr-1" /> Cancel
+                </button>
+                <button
+                  onClick={() => handleSaveTask(editingTask)}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                >
+                  <Save size={18} className="inline-block mr-1" /> Save Task
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Assign Task to Schedule Modal */}
-      {isAssignTaskModalOpen && (
-        <AssignTaskModal
-          onClose={() => {
-            setIsAssignTaskModal(false);
-            setAssigningToActivity(null);
-            setAssigningFromTask(null);
-          }}
-          projectTasks={projectTasks}
-          dailyScheduleState={dailyScheduleState}
-          currentDate={currentDate}
-          onAssign={handleAssignTask}
-          assigningToActivity={assigningToActivity}
-          assigningFromTask={assigningFromTask}
-        />
-      )}
+        {/* Assign Task to Schedule Modal */}
+        {isAssignTaskModalOpen && (
+          <AssignTaskModal
+            onClose={() => {
+              setIsAssignTaskModal(false);
+              setAssigningToActivity(null);
+              setAssigningFromTask(null);
+            }}
+            projectTasks={projectTasks}
+            dailyScheduleState={dailyScheduleState}
+            currentDate={currentDate}
+            onAssign={handleAssignTask}
+            assigningToActivity={assigningToActivity}
+            assigningFromTask={assigningFromTask}
+          />
+        )}
 
-      {/* Activity Reminder Modal */}
-      {showReminderModal && reminderActivity && (
-        <ActivityReminderModal
-          activity={reminderActivity}
-          onClose={() => setShowReminderModal(false)}
-        />
-      )}
+        {/* Activity Reminder Modal */}
+        {showReminderModal && reminderActivity && (
+          <ActivityReminderModal
+            activity={reminderActivity}
+            onClose={() => setShowReminderModal(false)}
+          />
+        )}
 
-      {/* Pomodoro Alert Modal */}
-      {pomodoroTimer.showAlert && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm text-center relative">
-            <BellRing size={48} className="mx-auto text-yellow-500 mb-4 animate-bounce" />
-            <h3 className="text-2xl font-bold text-indigo-700 mb-2">Pomodoro Alert!</h3>
-            <p className="text-lg text-gray-800 mb-4">
-              {pomodoroTimer.alertMessage}
-            </p>
-            <div className="flex justify-center space-x-4 mt-6">
-              {pomodoroTimer.nextMode && pomodoroTimer.nextTimeLeft > 0 && (
+        {/* Pomodoro Alert Modal */}
+        {pomodoroTimer.showAlert && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm text-center relative">
+              <BellRing size={48} className="mx-auto text-yellow-500 mb-4 animate-bounce" />
+              <h3 className="text-2xl font-bold text-indigo-700 mb-2">Pomodoro Alert!</h3>
+              <p className="text-lg text-gray-800 mb-4">
+                {pomodoroTimer.alertMessage}
+              </p>
+              <div className="flex justify-center space-x-4 mt-6">
+                {pomodoroTimer.nextMode && pomodoroTimer.nextTimeLeft > 0 && (
+                  <button
+                    onClick={continuePomodoro}
+                    className="px-6 py-2 bg-green-600 text-white rounded-md shadow-md hover:bg-green-700 transition-colors"
+                  >
+                    Continue to {pomodoroTimer.nextMode.replace('_', ' ')}
+                  </button>
+                )}
+                {pomodoroTimer.mode !== 'work' && (
+                  <button
+                    onClick={skipBreak}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-md shadow-md hover:bg-blue-700 transition-colors"
+                  >
+                    Skip Break
+                  </button>
+                )}
                 <button
-                  onClick={continuePomodoro}
-                  className="px-6 py-2 bg-green-600 text-white rounded-md shadow-md hover:bg-green-700 transition-colors"
+                  onClick={endPomodoroSession}
+                  className="px-6 py-2 bg-red-600 text-white rounded-md shadow-md hover:bg-red-700 transition-colors"
                 >
-                  Continue to {pomodoroTimer.nextMode.replace('_', ' ')}
+                  End Session
                 </button>
-              )}
-              {pomodoroTimer.mode !== 'work' && (
-                <button
-                  onClick={skipBreak}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-md shadow-md hover:bg-blue-700 transition-colors"
-                >
-                  Skip Break
-                </button>
-              )}
-              <button
-                onClick={endPomodoroSession}
-                className="px-6 py-2 bg-red-600 text-white rounded-md shadow-md hover:bg-red-700 transition-colors"
-              >
-                End Session
-              </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Confirmation Modal */}
-      {showConfirmationModal && (
-        <ConfirmationModal
-          message={confirmationMessage}
-          onConfirm={confirmationCallback.current}
-          onCancel={() => setShowConfirmationModal(false)}
-        />
-      )}
+        {/* Confirmation Modal */}
+        {showConfirmationModal && (
+          <ConfirmationModal
+            message={confirmationMessage}
+            onConfirm={confirmationCallback.current}
+            onCancel={() => setShowConfirmationModal(false)}
+          />
+        )}
 
-    </div>
+        {toast && (
+          <Toast
+            message={toast.message}
+            type={toast.type}
+            onClose={() => setToast(null)}
+          />
+        )}
+      </div>
+    </ErrorBoundary>
   );
 }
 
