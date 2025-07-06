@@ -2381,13 +2381,48 @@ const handleReconnectGoogleCalendar = useCallback(() => {
     }, 100); // Small delay to allow state to update
   }, [setAppSettings, showToast, appSettings.googleClientId, setIsConnectingGCal]);
 
+  // NEW: Handle Disconnect Google Calendar
+  const handleDisconnectGoogleCalendar = useCallback(() => {
+    setIsConnectingGCal(true); // Indicate that a connection operation is in progress
+    setAppSettings(prev => ({ ...prev, googleCalendarConnected: false })); // Update UI immediately
+
+    // Attempt to revoke token or sign out if GSI is loaded
+    if (window.google && window.google.accounts && window.google.accounts.oauth2 && tokenClientRef.current) {
+      try {
+        // This attempts to revoke the token from Google's side
+        // Note: Direct token revocation might not always be possible from client-side
+        // without a server, but signing out of the GSI session is the client-side best practice.
+        window.google.accounts.oauth2.revoke(window.gapi.client.getToken().access_token, () => {
+          console.log('Access token revoked.');
+          showToast('Google Calendar disconnected successfully!', 'success');
+          setIsConnectingGCal(false);
+        });
+        // Clear gapi client's token
+        window.gapi.client.setToken('');
+      } catch (error) {
+        console.error('Error during Google Calendar disconnect:', error);
+        showToast('Failed to disconnect Google Calendar. See console for details.', 'error', 7000);
+        setIsConnectingGCal(false);
+      }
+    } else {
+      showToast('Google API libraries not fully loaded or no active session to disconnect.', 'info');
+      setIsConnectingGCal(false);
+    }
+
+    // Also clear our internal refs to ensure a clean slate for next connection
+    gapiLoaded.current = false;
+    gsiLoaded.current = false;
+    tokenClientRef.current = null;
+
+  }, [setAppSettings, showToast, setIsConnectingGCal]);
+
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 font-inter text-gray-800 flex flex-col items-center">
         <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
           {/* Header and Tabs */}
           <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.11</span></h1>
+            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.12</span></h1>
             <div className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('schedule')}
@@ -3758,39 +3793,53 @@ const handleReconnectGoogleCalendar = useCallback(() => {
                     <p className="text-xs text-gray-500 mt-1">Only required for certain Google APIs, not typically for OAuth flow itself.</p>
                   </div>
                 </div>
-                <button
-                  onClick={connectGoogleCalendar}
-                  className={`px-4 py-2 rounded-md shadow-md transition-colors duration-200 flex items-center
-                    ${appSettings.googleCalendarConnected ? 'bg-green-500 text-white cursor-not-allowed' : 'bg-blue-500 text-white hover:bg-blue-600'}
-                  `}
-                  disabled={appSettings.googleCalendarConnected || !appSettings.googleClientId || isConnectingGCal}
-                >
-                  {isConnectingGCal ? (
+
+                {/* Buttons for Google Calendar Connection */}
+                <div className="flex flex-wrap gap-2"> {/* Use flex and gap for horizontal layout */}
+                  <button
+                    onClick={connectGoogleCalendar}
+                    className={`px-4 py-2 rounded-md shadow-md transition-colors duration-200 flex items-center
+                      ${appSettings.googleCalendarConnected ? 'bg-green-500 text-white cursor-not-allowed' : 'bg-blue-500 text-white hover:bg-blue-600'}
+                    `}
+                    disabled={appSettings.googleCalendarConnected || !appSettings.googleClientId || isConnectingGCal}
+                  >
+                    {isConnectingGCal ? (
+                      <>
+                        <span className="animate-spin mr-2">⚙️</span> Connecting...
+                      </>
+                    ) : appSettings.googleCalendarConnected ? (
+                      <>
+                        <CheckCircle size={20} className="mr-2" /> Connected
+                      </>
+                    ) : (
+                      <>
+                        <Link size={20} className="mr-2" /> Connect Google Calendar
+                      </>
+                    )}
+                  </button>
+                  {appSettings.googleCalendarConnected && (
                     <>
-                      <span className="animate-spin mr-2">⚙️</span> Connecting...
-                    </>
-                  ) : appSettings.googleCalendarConnected ? (
-                    <>
-                      <CheckCircle size={20} className="mr-2" /> Connected
-                    </>
-                  ) : (
-                    <>
-                      <Link size={20} className="mr-2" /> Connect Google Calendar
+                      <button
+                        onClick={handleReconnectGoogleCalendar}
+                        className={`px-4 py-2 rounded-md shadow-md transition-colors duration-200 flex items-center
+                          bg-orange-500 text-white hover:bg-orange-600
+                        `}
+                        disabled={isConnectingGCal}
+                      >
+                        <RefreshCcw size={20} className="mr-2" /> Reconnect
+                      </button>
+                      <button
+                        onClick={handleDisconnectGoogleCalendar}
+                        className={`px-4 py-2 rounded-md shadow-md transition-colors duration-200 flex items-center
+                          bg-red-500 text-white hover:bg-red-600
+                        `}
+                        disabled={isConnectingGCal}
+                      >
+                        <X size={20} className="mr-2" /> Disconnect
+                      </button>
                     </>
                   )}
-                </button>
-                {/* NEW: Refresh/Reconnect Google Calendar Button */}
-                {appSettings.googleCalendarConnected && (
-                  <button
-                    onClick={handleReconnectGoogleCalendar}
-                    className={`ml-2 px-4 py-2 rounded-md shadow-md transition-colors duration-200 flex items-center
-                      bg-orange-500 text-white hover:bg-orange-600
-                    `}
-                    disabled={isConnectingGCal}
-                  >
-                    <RefreshCcw size={20} className="mr-2" /> Reconnect
-                  </button>
-                )}
+                </div>
               </div>
 
               {/* Iqamah Times Settings */}
