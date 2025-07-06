@@ -60,7 +60,7 @@ const minutesToTime = (totalMinutes) => {
 
 const getPlannedDuration = (plannedStart, plannedEnd, dateContext) => {
     const start = parseTime(plannedStart, dateContext);
-    const end = parseTime(plannedEnd, dateContext);
+    let end = parseTime(plannedEnd, dateContext);
     if (end < start) {
       end.setDate(end.getDate() + 1);
     }
@@ -158,9 +158,11 @@ const generateScheduleForDate = (date, templateType, considerFasting, plannerSch
     
     let initialActivities = [];
 
+    // Prioritize daily custom schedule if it exists
     if (dailyCustomSchedules[dateKey] && dailyCustomSchedules[dateKey].length > 0) {
         initialActivities = JSON.parse(JSON.stringify(dailyCustomSchedules[dateKey]));
     } else {
+        // Otherwise, generate from templates
         let baseTemplateKey = templateType;
         if (!baseTemplateKey) {
             const dayOfWeek = date.getDay();
@@ -205,6 +207,7 @@ const generateScheduleForDate = (date, templateType, considerFasting, plannerSch
         if (endMinutes < startMinutes) endMinutes += 1440;
         const durationMinutes = endMinutes - startMinutes;
 
+        // Subdivide flexible blocks
         if ((activity.activity.includes('Deep Work Mode Flexible Work Block') || activity.activity.includes('Flexible Block / Errands / Relax / Family Time')) && durationMinutes > MAX_SUB_BLOCK_MINUTES) {
             let currentSubStartMinutes = startMinutes;
             let partCounter = 1;
@@ -233,6 +236,7 @@ const generateScheduleForDate = (date, templateType, considerFasting, plannerSch
         }
     });
 
+    // Add overrides
     (plannerSchedule.overrides.soccerDays || []).forEach(override => {
         if (override.recurrenceDays.includes(dayOfWeek)) {
             const uniqueOverrideId = `${override.id}-${dateKey}`;
@@ -410,7 +414,7 @@ function App() {
   const audioRef = useRef(new Audio('https://www.soundjay.com/buttons/beep-07.mp3'));
   const [currentActivityId, setCurrentActivityId] = useState(null);
 
-  const [dailyScheduleState, setDailyScheduleState] = useState([]);
+  const [dailyScheduleState, setDailyScheduleState] = useState([]); // This will be the effective schedule for the current day
 
   const [subTaskDetails, setSubTaskDetails] = useState(() => {
     try {
@@ -449,10 +453,10 @@ function App() {
     }
   });
 
-  const [activePlannerDayType, setActivePlannerDayType] = useState('weekday');
-  const [plannerViewMode, setPlannerViewMode] = useState('daily');
+  const [activePlannerDayType, setActivePlannerDayType] = useState('weekday'); // This is for template editing
+  // const [plannerViewMode, setPlannerViewMode] = useState('daily'); // No longer needed, as daily is merged into schedule
 
-  const [selectedPlannerDate, setSelectedPlannerDate] = useState(new Date());
+  const [selectedPlannerDate, setSelectedPlannerDate] = useState(new Date()); // For daily custom schedule in planner tab
   const [dailyCustomSchedules, setDailyCustomSchedules] = useState(() => {
     try {
       const savedCustomSchedules = localStorage.getItem('dailyCustomSchedules');
@@ -463,11 +467,11 @@ function App() {
     }
   });
 
-  const [selectedBaseTemplate, setSelectedBaseTemplate] = useState('weekday');
+  const [selectedBaseTemplate, setSelectedBaseTemplate] = useState('weekday'); // For applying templates to current day
 
   const [editingActivity, setEditingActivity] = useState(null);
-  const [isPlannerModalOpen, setIsPlannerModalOpen] = useState(false);
-  const [isEditingDailySchedule, setIsEditingDailySchedule] = useState(false);
+  const [isActivityModalOpen, setIsActivityModalOpen] = useState(false); // Renamed from isPlannerModalOpen
+  const [isEditingDailySchedule, setIsEditingDailySchedule] = useState(false); // Controls if modal edits daily or template
 
   const [projectTasks, setProjectTasks] = useState(() => {
     try {
@@ -524,7 +528,7 @@ function App() {
 
   const [draggingActivity, setDraggingActivity] = useState(null);
   const [resizingActivity, setResizingActivity] = useState(null);
-  const plannerTimelineRef = useRef(null);
+  const plannerTimelineRef = useRef(null); // Ref for the visual timeline in schedule/planner
 
   // "Now" indicator state
   const [nowIndicatorTop, setNowIndicatorTop] = useState(0);
@@ -567,14 +571,10 @@ function App() {
       const currentMinutes = now.getHours() * 60 + now.getMinutes();
       const totalPlannerMinutes = 24 * 60; // Total minutes in a day
 
-      if (scheduleTableRef.current && theadRef.current) {
-        // Calculate the height of the scrollable tbody area
-        const tableBodyHeight = scheduleTableRef.current.clientHeight - theadRef.current.offsetHeight;
-        const pixelsPerMinute = tableBodyHeight / totalPlannerMinutes;
-
-        // Calculate top position relative to the start of the tbody
-        const topOffsetFromTableContainer = theadRef.current.offsetHeight;
-        setNowIndicatorTop(topOffsetFromTableContainer + (currentMinutes * pixelsPerMinute));
+      if (plannerTimelineRef.current) {
+        const timelineHeight = plannerTimelineRef.current.clientHeight;
+        const pixelsPerMinute = timelineHeight / totalPlannerMinutes;
+        setNowIndicatorTop(currentMinutes * pixelsPerMinute);
       } else {
         setNowIndicatorTop(0); // Fallback if refs are not ready
       }
@@ -1000,13 +1000,14 @@ function App() {
 
   const handleActivityNotesKeyDown = (e, activityId) => { if (e.key === 'Enter') { setEditingSubTaskId(null); } };
 
+  // --- Template Activity Handlers (for Day Planner tab) ---
   const handleAddTemplateActivity = () => {
     setEditingActivity({
       id: `new-${Date.now()}`, activity: '', plannedStart: '09:00', plannedEnd: '10:00',
       type: 'personal', recurrenceType: 'none', recurrenceDays: [], constraintType: 'adjustable', isNew: true,
     });
-    setIsEditingDailySchedule(false);
-    setIsPlannerModalOpen(true);
+    setIsEditingDailySchedule(false); // This is a template edit
+    setIsActivityModalOpen(true);
   };
 
   const handleEditTemplateActivity = (activity) => {
@@ -1014,7 +1015,8 @@ function App() {
       ...activity, recurrenceType: activity.recurrenceType || 'none',
       recurrenceDays: activity.recurrenceDays || [], constraintType: activity.constraintType || 'adjustable',
     });
-    setIsPlannerModalOpen(true);
+    setIsEditingDailySchedule(false); // This is a template edit
+    setIsActivityModalOpen(true);
   };
 
   const handleDeleteTemplateActivity = (activityId) => {
@@ -1043,17 +1045,18 @@ function App() {
       }
       return updatedSchedule;
     });
-    setIsPlannerModalOpen(false);
+    setIsActivityModalOpen(false);
     setEditingActivity(null);
   };
 
+  // --- Daily Activity Handlers (for Schedule tab) ---
   const handleAddDailyActivity = () => {
     setEditingActivity({
-      id: `new-${Date.now()}`, activity: '', plannedStart: '09:00', plannedEnd: '10:00',
+      id: `new-${Date.now()}`, activity: '', plannedStart: formatTo24HourTime(new Date()), plannedEnd: formatTo24HourTime(new Date(new Date().getTime() + 60 * 60 * 1000)), // Default to current time + 1 hour
       type: 'personal', recurrenceType: 'none', recurrenceDays: [], constraintType: 'adjustable', isNew: true,
     });
-    setIsEditingDailySchedule(true);
-    setIsPlannerModalOpen(true);
+    setIsEditingDailySchedule(true); // This is a daily edit
+    setIsActivityModalOpen(true);
   };
 
   const handleEditDailyActivity = (activity) => {
@@ -1061,26 +1064,32 @@ function App() {
       ...activity, recurrenceType: activity.recurrenceType || 'none',
       recurrenceDays: activity.recurrenceDays || [], constraintType: activity.constraintType || 'adjustable',
     });
-    setIsEditingDailySchedule(true);
-    setIsPlannerModalOpen(true);
+    setIsEditingDailySchedule(true); // This is a daily edit
+    setIsActivityModalOpen(true);
   };
 
   const handleDeleteDailyActivity = (activityId) => {
     setConfirmationMessage('Are you sure you want to delete this activity for this specific day?');
     confirmationCallback.current = () => {
-      const dateKey = formatDateToYYYYMMDD(selectedPlannerDate);
-      setDailyCustomSchedules(prev => ({
-        ...prev, [dateKey]: prev[dateKey].filter(act => act.id !== activityId)
-      }));
+      const dateKey = formatDateToYYYYMMDD(currentDate); // Use currentDate for schedule tab
+      setDailyCustomSchedules(prev => {
+        const newDailyCustomSchedules = { ...prev };
+        if (newDailyCustomSchedules[dateKey]) {
+          newDailyCustomSchedules[dateKey] = newDailyCustomSchedules[dateKey].filter(act => act.id !== activityId);
+        }
+        return newDailyCustomSchedules;
+      });
       setShowConfirmationModal(false);
     };
     setShowConfirmationModal(true);
   };
 
   const handleSaveDailyActivity = (updatedActivity) => {
-    const dateKey = formatDateToYYYYMMDD(selectedPlannerDate);
+    const dateKey = formatDateToYYYYMMDD(currentDate); // Use currentDate for schedule tab
     setDailyCustomSchedules(prev => {
-      const currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] : [];
+      // If no custom schedule exists for this day, initialize it from the generated schedule
+      const currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] :
+                                 generateScheduleForDate(currentDate, null, true, plannerSchedule, prev, fastingDates);
       let newDaySchedule;
 
       if (updatedActivity.isNew) {
@@ -1093,19 +1102,19 @@ function App() {
       }
       return { ...prev, [dateKey]: newDaySchedule, };
     });
-    setIsPlannerModalOpen(false);
+    setIsActivityModalOpen(false);
     setEditingActivity(null);
   };
 
   const handleApplyTemplateToDailyPlan = () => {
-    const dateKey = formatDateToYYYYMMDD(selectedPlannerDate);
-    const generatedSchedule = generateScheduleForDate(selectedPlannerDate, selectedBaseTemplate, true, plannerSchedule, dailyCustomSchedules, fastingDates);
+    const dateKey = formatDateToYYYYMMDD(currentDate); // Apply to current date
+    const generatedSchedule = generateScheduleForDate(currentDate, selectedBaseTemplate, true, plannerSchedule, dailyCustomSchedules, fastingDates);
     setDailyCustomSchedules(prev => ({ ...prev, [dateKey]: generatedSchedule }));
-    showToast(`Template '${selectedBaseTemplate}' applied to ${selectedPlannerDate.toLocaleDateString()}!`, 'success');
+    showToast(`Template '${selectedBaseTemplate}' applied to ${currentDate.toLocaleDateString()}!`, 'success');
   };
 
   const handleCancelEdit = () => {
-    setIsPlannerModalOpen(false);
+    setIsActivityModalOpen(false);
     setEditingActivity(null);
   };
 
@@ -1394,43 +1403,50 @@ function App() {
     audioRef.current.play().catch(e => console.log("Audio play failed on initial attempt (expected if no sound):", e));
   };
 
-  const handleMouseDown = useCallback((e, activityId, type = 'move', isDaily = false) => {
+  const handleMouseDown = useCallback((e, activityId, type = 'move') => {
     e.preventDefault();
     const activityElement = e.currentTarget;
     const rect = activityElement.getBoundingClientRect();
-    const plannerRect = plannerTimelineRef.current.getBoundingClientRect();
+    const timelineRect = plannerTimelineRef.current.getBoundingClientRect();
 
-    const currentScheduleSource = isDaily
-      ? dailyCustomSchedules[formatDateToYYYYMMDD(selectedPlannerDate)]
-      : plannerSchedule[activePlannerDayType];
+    const currentSchedule = dailyCustomSchedules[formatDateToYYYYMMDD(currentDate)] || dailyScheduleState;
 
-    if (!currentScheduleSource) return;
+    if (!currentSchedule) return;
+
+    let activityToModify = currentSchedule.find(act => act.id === activityId); // Changed to 'let'
+    if (!activityToModify) return;
+
+    // If no custom schedule for today, create one from the generated schedule before modifying
+    if (!dailyCustomSchedules[formatDateToYYYYMMDD(currentDate)]) {
+        const generated = generateScheduleForDate(currentDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates);
+        setDailyCustomSchedules(prev => ({ ...prev, [formatDateToYYYYMMDD(currentDate)]: generated }));
+        // Update activityToModify reference after state update
+        activityToModify = generated.find(act => act.id === activityId);
+    }
+
 
     if (type === 'move') {
       setDraggingActivity({
-        id: activityId, startY: e.clientY, initialTop: rect.top - plannerRect.top,
-        initialStart: currentScheduleSource.find(act => act.id === activityId).plannedStart,
-        initialEnd: currentScheduleSource.find(act => act.id === activityId).plannedEnd,
-        isDaily: isDaily,
+        id: activityId, startY: e.clientY, initialTop: rect.top - timelineRect.top,
+        initialStart: activityToModify.plannedStart,
+        initialEnd: activityToModify.plannedEnd,
       });
     } else {
       setResizingActivity({
-        id: activityId, startY: e.clientY, initialHeight: rect.height, initialTop: rect.top - plannerRect.top,
-        type: type, initialStart: currentScheduleSource.find(act => act.id === activityId).plannedStart,
-        initialEnd: currentScheduleSource.find(act => act.id === activityId).plannedEnd,
-        isDaily: isDaily,
+        id: activityId, startY: e.clientY, initialHeight: rect.height, initialTop: rect.top - timelineRect.top,
+        type: type, initialStart: activityToModify.plannedStart,
+        initialEnd: activityToModify.plannedEnd,
       });
     }
-  }, [plannerSchedule, activePlannerDayType, dailyCustomSchedules, selectedPlannerDate]);
+  }, [dailyCustomSchedules, currentDate, dailyScheduleState, plannerSchedule, fastingDates]);
 
   const handleMouseMove = useCallback((e) => {
+    const dateKey = formatDateToYYYYMMDD(currentDate);
+    const totalPlannerMinutes = 24 * 60;
+    const pixelsPerMinute = plannerTimelineRef.current ? plannerTimelineRef.current.clientHeight / totalPlannerMinutes : 1;
+
     if (draggingActivity) {
-      const plannerRect = plannerTimelineRef.current.getBoundingClientRect();
       const deltaY = e.clientY - draggingActivity.startY;
-
-      const totalPlannerMinutes = 24 * 60;
-      const pixelsPerMinute = plannerTimelineRef.current.clientHeight / totalPlannerMinutes;
-
       const minutesDelta = Math.round(deltaY / pixelsPerMinute);
 
       const initialStartMinutes = timeToMinutes(draggingActivity.initialStart);
@@ -1440,36 +1456,27 @@ function App() {
       let newStartMinutes = initialStartMinutes + minutesDelta;
       let newEndMinutes = newStartMinutes + durationMinutes;
 
+      // Handle wrap around for new times
       if (newStartMinutes < 0) { newStartMinutes += 1440; newEndMinutes += 1440; }
       else if (newStartMinutes >= 1440) { newStartMinutes -= 1440; newEndMinutes -= 1440; }
 
-      const updateState = draggingActivity.isDaily ? setDailyCustomSchedules : setPlannerSchedule;
-      const targetKey = draggingActivity.isDaily ? formatDateToYYYYMMDD(selectedPlannerDate) : activePlannerDayType;
-
-      updateState(prev => {
-        const updatedSchedule = { ...prev };
-        updatedSchedule[targetKey] = updatedSchedule[targetKey].map(activity => {
+      setDailyCustomSchedules(prev => {
+        const currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] : dailyScheduleState; // Use dailyScheduleState as base if no custom
+        const updatedSchedule = currentDaySchedule.map(activity => {
           if (activity.id === draggingActivity.id) {
             return { ...activity, plannedStart: minutesToTime(newStartMinutes), plannedEnd: minutesToTime(newEndMinutes), };
           }
           return activity;
         });
-        return updatedSchedule;
+        return { ...prev, [dateKey]: updatedSchedule };
       });
     } else if (resizingActivity) {
-      const plannerRect = plannerTimelineRef.current.getBoundingClientRect();
       const deltaY = e.clientY - resizingActivity.startY;
-
-      const totalPlannerMinutes = 24 * 60;
-      const pixelsPerMinute = plannerTimelineRef.current.clientHeight / totalPlannerMinutes;
       const minutesDelta = Math.round(deltaY / pixelsPerMinute);
 
-      const updateState = resizingActivity.isDaily ? setDailyCustomSchedules : setPlannerSchedule;
-      const targetKey = resizingActivity.isDaily ? formatDateToYYYYMMDD(selectedPlannerDate) : activePlannerDayType;
-
-      updateState(prev => {
-        const updatedSchedule = { ...prev };
-        updatedSchedule[targetKey] = updatedSchedule[targetKey].map(activity => {
+      setDailyCustomSchedules(prev => {
+        const currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] : dailyScheduleState; // Use dailyScheduleState as base if no custom
+        const updatedSchedule = currentDaySchedule.map(activity => {
           if (activity.id === resizingActivity.id) {
             let newStartMinutes = timeToMinutes(resizingActivity.initialStart);
             let newEndMinutes = timeToMinutes(resizingActivity.initialEnd);
@@ -1478,20 +1485,20 @@ function App() {
             if (resizingActivity.type === 'bottom') {
               newEndMinutes = (timeToMinutes(resizingActivity.initialEnd) + minutesDelta);
               if (newEndMinutes < newStartMinutes) newEndMinutes += 1440;
-              if (newEndMinutes < newStartMinutes + 1) newEndMinutes = newStartMinutes + 1;
+              if (newEndMinutes < newStartMinutes + 1) newEndMinutes = newStartMinutes + 1; // Minimum 1 minute duration
             } else if (resizingActivity.type === 'top') {
               newStartMinutes = (timeToMinutes(resizingActivity.initialStart) + minutesDelta);
-              if (newStartMinutes > newEndMinutes - 1) newStartMinutes = newEndMinutes - 1;
+              if (newStartMinutes > newEndMinutes - 1) newStartMinutes = newEndMinutes - 1; // Minimum 1 minute duration
             }
 
             return { ...activity, plannedStart: minutesToTime(newStartMinutes), plannedEnd: minutesToTime(newEndMinutes), };
           }
           return activity;
         });
-        return updatedSchedule;
+        return { ...prev, [dateKey]: updatedSchedule };
       });
     }
-  }, [draggingActivity, resizingActivity, plannerSchedule, activePlannerDayType, dailyCustomSchedules, selectedPlannerDate]);
+  }, [draggingActivity, resizingActivity, dailyCustomSchedules, currentDate, dailyScheduleState]);
 
   const handleMouseUp = useCallback(() => {
     setDraggingActivity(null);
@@ -1516,7 +1523,7 @@ function App() {
     const startMinutes = timeToMinutes(activity.plannedStart);
     let endMinutes = timeToMinutes(activity.plannedEnd);
 
-    if (endMinutes < startMinutes) { endMinutes += 1440; }
+    if (endMinutes < startMinutes) { endMinutes += 1440; } // Handle overnight activities
 
     const durationMinutes = endMinutes - startMinutes;
 
@@ -1529,6 +1536,7 @@ function App() {
     return { top: `${topPx}px`, height: `${heightPx}px`, };
   }, []);
 
+  // Effect to update dailyScheduleState whenever currentDate or underlying data changes
   useEffect(() => {
     setDailyScheduleState(generateScheduleForDate(currentDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates));
   }, [currentDate, plannerSchedule, dailyCustomSchedules, fastingDates]);
@@ -1558,7 +1566,7 @@ function App() {
     };
 
     const chatHistory = [];
-    chatHistory.push({ role: "user", parts: [{ text: `Parse this schedule modification request into JSON: "${userInput}". Be precise with activity names and times. If a time is not specified, do not include it. Infer 'today' if no date is given. If duration is changed, calculate newPlannedEnd based on newPlannedStart. If an activity name is not clear, suggest options. Use the current date as ${formatDateToYYYYMMDD(selectedPlannerDate)} for 'today'.` }] });
+    chatHistory.push({ role: "user", parts: [{ text: `Parse this schedule modification request into JSON: "${userInput}". Be precise with activity names and times. If a time is not specified, do not include it. Infer 'today' if no date is given. If duration is changed, calculate newPlannedEnd based on newPlannedStart. If an activity name is not clear, suggest options. Use the current date as ${formatDateToYYYYMMDD(currentDate)} for 'today'.` }] });
 
     const payload = {
       contents: chatHistory,
@@ -1587,13 +1595,14 @@ function App() {
         const parsedCommand = JSON.parse(jsonString);
         console.log("AI Parsed Command:", parsedCommand);
 
-        const targetDateObj = parsedCommand.targetDate === 'today' ? selectedPlannerDate :
-                              parsedCommand.targetDate === 'tomorrow' ? new Date(selectedPlannerDate.getTime() + 24 * 60 * 60 * 1000) :
-                              parsedCommand.targetDate ? new Date(parsedCommand.targetDate) : selectedPlannerDate;
+        const targetDateObj = parsedCommand.targetDate === 'today' ? currentDate :
+                              parsedCommand.targetDate === 'tomorrow' ? new Date(currentDate.getTime() + 24 * 60 * 60 * 1000) :
+                              parsedCommand.targetDate ? new Date(parsedCommand.targetDate) : currentDate;
         const dateKey = formatDateToYYYYMMDD(targetDateObj);
 
         setDailyCustomSchedules(prevDailySchedules => {
-          const currentDayActivities = prevDailySchedules[dateKey] ? [...prevDailySchedules[dateKey]] :
+          // Ensure we are working on a mutable copy of the current day's schedule
+          let currentDayActivities = prevDailySchedules[dateKey] ? [...prevDailySchedules[dateKey]] :
                                        generateScheduleForDate(targetDateObj, null, true, plannerSchedule, prevDailySchedules, fastingDates);
           let updatedDayActivities = [...currentDayActivities];
           let changesApplied = false;
@@ -1766,7 +1775,7 @@ function App() {
       console.error("Error calling Gemini API:", error);
       showToast("Error communicating with AI. Please try again later.", "error");
     }
-  }, [selectedPlannerDate, dailyCustomSchedules, plannerSchedule, fastingDates, showToast]);
+  }, [currentDate, dailyCustomSchedules, plannerSchedule, fastingDates, showToast]);
 
 
   return (
@@ -1791,7 +1800,7 @@ function App() {
                   activeTab === 'day-planner' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                 }`}
               >
-                <Plus className="inline-block mr-2" size={18} /> Day Planner
+                <Plus className="inline-block mr-2" size={18} /> Templates
               </button>
               <button
                 onClick={() => setActiveTab('tasks')}
@@ -1839,6 +1848,63 @@ function App() {
                   className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
                 >
                   <ChevronRight size={20} />
+                </button>
+              </div>
+
+              {/* Fasting Day Checkbox */}
+              <div className="flex items-center justify-center mb-4">
+                  <input
+                      type="checkbox"
+                      id="isFastingDaySchedule"
+                      checked={!!fastingDates[formatDateToYYYYMMDD(currentDate)]}
+                      onChange={() => handleToggleFastingDay(currentDate)}
+                      className="form-checkbox h-5 w-5 text-indigo-600 rounded"
+                  />
+                  <label htmlFor="isFastingDaySchedule" className="ml-2 text-lg font-medium text-gray-700">
+                      Mark as Fasting Day
+                  </label>
+              </div>
+
+              {/* Base Template Selection for Current Day */}
+              <div className="flex items-center space-x-2 mb-4">
+                  <label htmlFor="baseTemplateSelect" className="block text-sm font-medium text-gray-700">Apply Base Template:</label>
+                  <select
+                      id="baseTemplateSelect"
+                      value={selectedBaseTemplate}
+                      onChange={(e) => setSelectedBaseTemplate(e.target.value)}
+                      className="p-2 border border-gray-300 rounded-md"
+                  >
+                      <option value="weekday">Weekday</option>
+                      <option value="weekend">Weekend</option>
+                      <option value="jumuah">Jumu'ah</option>
+                      <option value="fasting">Fasting Day</option>
+                  </select>
+                  <button
+                      onClick={handleApplyTemplateToDailyPlan}
+                      className="px-4 py-2 bg-blue-500 text-white rounded-md shadow-md hover:bg-blue-600 transition-colors duration-200 flex items-center"
+                      aria-label="Apply selected template"
+                  >
+                      Apply Template
+                  </button>
+              </div>
+
+              {/* AI Schedule Refinement Input */}
+              <div className="mt-2 p-4 bg-gray-50 rounded-lg shadow-inner mb-6">
+                <h3 className="text-xl font-semibold text-indigo-700 mb-2">AI Schedule Refinement</h3>
+                <textarea
+                  id="aiCommandInput"
+                  rows="3"
+                  placeholder="e.g., 'Move my morning exercise to 7 AM and make it 45 minutes long' or 'Shift all academic blocks 30 minutes later today'"
+                  className="w-full p-2 border border-gray-300 rounded-md mb-2"
+                  value={aiCommandInput}
+                  onChange={(e) => setAiCommandInput(e.target.value)}
+                ></textarea>
+                <button
+                  onClick={() => refineScheduleWithAI(aiCommandInput)}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-md shadow-md hover:bg-purple-700 transition-colors flex items-center"
+                  aria-label="Refine schedule with AI"
+                >
+                  <Play size={18} className="inline-block mr-1" /> Refine with AI
                 </button>
               </div>
 
@@ -2057,8 +2123,51 @@ function App() {
                   </div>
               </div>
 
-              {/* Scrollable Schedule Table */}
-              <div className="overflow-y-auto flex-grow relative" ref={scheduleTableRef}>
+              {/* Add New Activity Button for Daily Schedule */}
+              <button
+                  onClick={handleAddDailyActivity}
+                  className="mb-4 px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center self-start"
+                  aria-label="Add New Activity to Daily Plan"
+              >
+                  <Plus size={20} className="mr-2" /> Add New Activity to Daily Plan
+              </button>
+
+              {/* Visual Planner Timeline for Daily Editor (Now in Schedule Tab) */}
+              <div ref={plannerTimelineRef} className="relative w-full h-[720px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200 mb-6">
+                {/* Time Grid Lines and Labels */}
+                {[...Array(25)].map((_, hour) => (
+                    <React.Fragment key={hour}>
+                    <div
+                        className="absolute left-0 w-full border-t border-gray-200 text-xs text-gray-500 pl-2"
+                        style={{ top: `${(hour / 24) * 100}%`, height: '1px' }}
+                    >
+                        <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:00</span>
+                    </div>
+                    {hour < 24 && (
+                        <>
+                        <div
+                            className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                            style={{ top: `${(hour / 24) * 100 + (15 / 1440) * 100}%`, height: '1px' }}
+                        >
+                            <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:15</span>
+                        </div>
+                        <div
+                            className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                            style={{ top: `${(hour / 24) * 100 + (30 / 1440) * 100}%`, height: '1px' }}
+                        >
+                            <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:30</span>
+                        </div>
+                        <div
+                            className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                            style={{ top: `${(hour / 24) * 100 + (45 / 1440) * 100}%`, height: '1px' }}
+                        >
+                            <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:45</span>
+                        </div>
+                        </>
+                    )}
+                    </React.Fragment>
+                ))}
+
                 {/* "Now" Indicator Line */}
                 <div
                   className="absolute left-0 right-0 h-0.5 bg-red-500 z-20 transition-all duration-1000 ease-linear"
@@ -2068,6 +2177,50 @@ function App() {
                   <span className="absolute left-4 -top-2 text-xs text-red-700 font-bold">Now</span>
                 </div>
 
+                {/* Activity Blocks for Daily Editor */}
+                {dailyScheduleState.sort((a,b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)).map(activity => {
+                    const { top, height } = calculateBlockStyles(activity);
+                    const activityNameLower = activity.activity.toLowerCase();
+
+                    let bgColor = 'bg-indigo-200';
+                    if (activity.type === 'academic') bgColor = 'bg-blue-200';
+                    if (activity.type === 'spiritual') bgColor = 'bg-green-200';
+                    if (activity.type === 'physical') bgColor = 'bg-red-200';
+                    if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
+
+                    return (
+                    <div
+                        key={activity.id}
+                        className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
+                        ${bgColor}
+                        ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
+                        `}
+                        style={{ top, height }}
+                        onMouseDown={(e) => handleMouseDown(e, activity.id, 'move')}
+                        onDoubleClick={() => handleEditDailyActivity(activity)}
+                        title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
+                    >
+                        {/* Top Resize Handle */}
+                        <div
+                        className="absolute top-0 left-0 right-0 h-2 -mt-1 cursor-ns-resize z-30"
+                        onMouseDown={(e) => handleMouseDown(e, activity.id, 'top')}
+                        ></div>
+                        <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
+                        <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
+                        {/* Bottom Resize Handle */}
+                        <div
+                        className="absolute bottom-0 left-0 right-0 h-2 -mb-1 cursor-ns-resize z-30"
+                        onMouseDown={(e) => handleMouseDown(e, activity.id, 'bottom')}
+                        ></div>
+                    </div>
+                    );
+                })}
+              </div>
+              <p className="text-sm text-gray-500 mt-4 mb-6">Double-click an activity to edit details. Drag activities to adjust their times. Drag top/bottom edges to resize. Changes here only affect this specific day.</p>
+
+
+              {/* Scrollable Schedule Table (Detailed View) */}
+              <div className="overflow-y-auto flex-grow relative" ref={scheduleTableRef}>
                 <table className="min-w-full bg-white rounded-lg shadow-md">
                   {/* Ref for thead to calculate "Now" line offset */}
                   <thead className="bg-indigo-100 sticky top-0 z-10" ref={theadRef}>
@@ -2262,429 +2415,159 @@ function App() {
             </div>
           )}
 
-          {/* Day Planner Tab */}
+          {/* Day Planner Tab (Now Template Editor) */}
           {activeTab === 'day-planner' && (
             <div className="flex-grow flex flex-col">
-              <h2 className="text-2xl font-semibold text-indigo-800 mb-4">Customize Your Day Plans</h2>
+              <h2 className="text-2xl font-semibold text-indigo-800 mb-4">Manage Schedule Templates</h2>
               <p className="text-gray-600 mb-4">
-                Select a day type to view and edit its recurring activities, or customize a specific day.
+                Edit your recurring daily, weekend, Jumu'ah, and fasting day templates here. These templates can be applied to any specific day in the Schedule tab.
               </p>
 
-              {/* Planner View Mode Selector */}
-              <div className="flex space-x-2 mb-4">
+              {/* Day Type Selector Buttons for Templates */}
+              <div className="flex flex-wrap gap-2 mb-4">
+              {['weekday', 'weekend', 'jumuah', 'fasting'].map(type => (
                   <button
-                      onClick={() => setPlannerViewMode('daily')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                          plannerViewMode === 'daily' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
+                  key={type}
+                  onClick={() => setActivePlannerDayType(type)}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 capitalize ${
+                      activePlannerDayType === type ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
                   >
-                      Daily Plan Editor
+                  {type.replace('-', ' ')}
                   </button>
-                  <button
-                      onClick={() => setPlannerViewMode('templates')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
-                          plannerViewMode === 'templates' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
-                  >
-                      Template Editor
-                  </button>
+              ))}
               </div>
 
-              {plannerViewMode === 'templates' ? (
-                  <>
-                      {/* Day Type Selector Buttons for Templates */}
-                      <div className="flex flex-wrap gap-2 mb-4">
-                      {['weekday', 'weekend', 'jumuah', 'fasting'].map(type => (
+              <button
+              onClick={handleAddTemplateActivity}
+              className="mb-4 px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center self-start"
+              aria-label="Add New Activity to Template"
+              >
+              <Plus size={20} className="mr-2" /> Add New Activity to {activePlannerDayType.replace('-', ' ')} Template
+              </button>
+
+              {/* Quick Reference Activity List for Current Day Type */}
+              <div className="bg-indigo-50 rounded-lg p-4 mb-6 shadow-inner">
+              <h3 className="text-lg font-semibold text-indigo-700 mb-2 capitalize">
+                  {activePlannerDayType.replace('-', ' ')} Activities Overview
+              </h3>
+              {plannerSchedule[activePlannerDayType] && plannerSchedule[activePlannerDayType].length > 0 ? (
+                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {plannerSchedule[activePlannerDayType]
+                      .sort((a, b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart))
+                      .map(activity => (
+                      <li key={activity.id} className="bg-white p-3 rounded-md shadow-sm flex items-center justify-between">
+                          <div>
+                          <p className="font-medium text-gray-800">{activity.activity}</p>
+                          <p className="text-xs text-gray-600">
+                              {activity.plannedStart} - {activity.plannedEnd} | Type: {activity.type} | Recurrence: {activity.recurrenceType}
+                              {activity.recurrenceType === 'weekly' && ` (${activity.recurrenceDays.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')})`}
+                              | Constraint: {activity.constraintType}
+                          </p>
+                          </div>
+                          <div className="flex space-x-1">
                           <button
-                          key={type}
-                          onClick={() => setActivePlannerDayType(type)}
-                          className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 capitalize ${
-                              activePlannerDayType === type ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                          }`}
+                              onClick={() => handleEditTemplateActivity(activity)}
+                              className="p-1 text-blue-500 hover:text-blue-700 transition-colors"
+                              aria-label={`Edit ${activity.activity}`}
                           >
-                          {type.replace('-', ' ')}
+                              <Edit size={16} />
                           </button>
-                      ))}
-                      </div>
-
-                      <button
-                      onClick={handleAddTemplateActivity}
-                      className="mb-4 px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center self-start"
-                      aria-label="Add New Activity"
-                      >
-                      <Plus size={20} className="mr-2" /> Add New Activity to {activePlannerDayType.replace('-', ' ')} Template
-                      </button>
-
-                      {/* Quick Reference Activity List for Current Day Type */}
-                      <div className="bg-indigo-50 rounded-lg p-4 mb-6 shadow-inner">
-                      <h3 className="text-lg font-semibold text-indigo-700 mb-2 capitalize">
-                          {activePlannerDayType.replace('-', ' ')} Activities Overview
-                      </h3>
-                      {plannerSchedule[activePlannerDayType] && plannerSchedule[activePlannerDayType].length > 0 ? (
-                          <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {plannerSchedule[activePlannerDayType]
-                              .sort((a, b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart))
-                              .map(activity => (
-                              <li key={activity.id} className="bg-white p-3 rounded-md shadow-sm flex items-center justify-between">
-                                  <div>
-                                  <p className="font-medium text-gray-800">{activity.activity}</p>
-                                  <p className="text-xs text-gray-600">
-                                      {activity.plannedStart} - {activity.plannedEnd} | Type: {activity.type} | Recurrence: {activity.recurrenceType}
-                                      {activity.recurrenceType === 'weekly' && ` (${activity.recurrenceDays.map(d => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')})`}
-                                      | Constraint: {activity.constraintType}
-                                  </p>
-                                  </div>
-                                  <div className="flex space-x-1">
-                                  <button
-                                      onClick={() => handleEditTemplateActivity(activity)}
-                                      className="p-1 text-blue-500 hover:text-blue-700 transition-colors"
-                                      aria-label={`Edit ${activity.activity}`}
-                                  >
-                                      <Edit size={16} />
-                                  </button>
-                                  <button
-                                      onClick={() => handleDeleteTemplateActivity(activity.id)}
-                                      className="p-1 text-red-500 hover:text-red-700 transition-colors"
-                                      aria-label={`Delete ${activity.activity}`}
-                                  >
-                                      <Trash2 size={16} />
-                                  </button>
-                                  </div>
-                              </li>
-                              ))}
-                          </ul>
-                      ) : (
-                          <p className="text-sm text-gray-500">No activities defined for this day type yet. Click "Add New Activity" to start!</p>
-                      )}
-                      </div>
-
-
-                      {/* Visual Planner Timeline for Templates */}
-                      <div ref={plannerTimelineRef} className="relative w-full h-[1440px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200">
-                      {/* Time Grid Lines and Labels */}
-                      {[...Array(25)].map((_, hour) => (
-                          <React.Fragment key={hour}>
-                          <div
-                              className="absolute left-0 w-full border-t border-gray-200 text-xs text-gray-500 pl-2"
-                              style={{ top: `${(hour / 24) * 100}%`, height: '1px' }}
+                          <button
+                              onClick={() => handleDeleteTemplateActivity(activity.id)}
+                              className="p-1 text-red-500 hover:text-red-700 transition-colors"
+                              aria-label={`Delete ${activity.activity}`}
                           >
-                              <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:00</span>
+                              <Trash2 size={16} />
+                          </button>
                           </div>
-                          {hour < 24 && (
-                              <>
-                              <div
-                                  className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                                  style={{ top: `${(hour / 24) * 100 + (15 / 1440) * 100}%`, height: '1px' }}
-                              >
-                                  <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:15</span>
-                              </div>
-                              <div
-                                  className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                                  style={{ top: `${(hour / 24) * 100 + (30 / 1440) * 100}%`, height: '1px' }}
-                              >
-                                  <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:30</span>
-                              </div>
-                              <div
-                                  className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                                  style={{ top: `${(hour / 24) * 100 + (45 / 1440) * 100}%`, height: '1px' }}
-                              >
-                                  <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:45</span>
-                              </div>
-                              </>
-                          )}
-                          </React.Fragment>
+                      </li>
                       ))}
-
-                      {/* Activity Blocks */}
-                      {plannerSchedule[activePlannerDayType] && plannerSchedule[activePlannerDayType].sort((a,b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)).map(activity => {
-                          const { top, height } = calculateBlockStyles(activity);
-                          const activityNameLower = activity.activity.toLowerCase();
-
-                          let bgColor = 'bg-indigo-200';
-                          if (activity.type === 'academic') bgColor = 'bg-blue-200';
-                          if (activity.type === 'spiritual') bgColor = 'bg-green-200';
-                          if (activity.type === 'physical') bgColor = 'bg-red-200';
-                          if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
-
-
-                          return (
-                          <div
-                              key={activity.id}
-                              className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
-                              ${bgColor}
-                              ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
-                              `}
-                              style={{ top, height }}
-                              onMouseDown={(e) => handleMouseDown(e, activity.id, 'move', false)}
-                              onDoubleClick={() => handleEditTemplateActivity(activity)}
-                              title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
-                          >
-                              {/* Top Resize Handle */}
-                              <div
-                              className="absolute top-0 left-0 right-0 h-2 -mt-1 cursor-ns-resize z-30"
-                              onMouseDown={(e) => handleMouseDown(e, activity.id, 'top', false)}
-                              ></div>
-                              <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
-                              <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
-                              {/* Bottom Resize Handle */}
-                              <div
-                              className="absolute bottom-0 left-0 right-0 h-2 -mb-1 cursor-ns-resize z-30"
-                              onMouseDown={(e) => handleMouseDown(e, activity.id, 'bottom', false)}
-                              ></div>
-                          </div>
-                          );
-                      })}
-                      </div>
-
-                      <p className="text-sm text-gray-500 mt-4">Double-click an activity to edit details. Drag activities to adjust their times. Drag top/bottom edges to resize.</p>
-                  </>
+                  </ul>
               ) : (
-                  <>
-                      {/* Date Navigation for Daily Planner Editor */}
-                      <div className="flex justify-between items-center mb-4">
-                          <button
-                              onClick={() => setSelectedPlannerDate(prev => { const newDate = new Date(prev); newDate.setDate(newDate.getDate() - 1); return newDate; })}
-                              className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
-                              aria-label="Previous day"
-                          >
-                              <ChevronLeft size={20} />
-                          </button>
-                          <h3 className="text-2xl font-semibold text-indigo-800">
-                              Daily Plan for {selectedPlannerDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                          </h3>
-                          <button
-                              onClick={() => setSelectedPlannerDate(prev => { const newDate = new Date(prev); newDate.setDate(newDate.getDate() + 1); return newDate; })}
-                              className="p-2 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors duration-200"
-                              aria-label="Next day"
-                          >
-                              <ChevronRight size={20} />
-                          </button>
-                      </div>
-
-                      {/* Fasting Day Checkbox */}
-                      <div className="flex items-center justify-center mb-4">
-                          <input
-                              type="checkbox"
-                              id="isFastingDayPlanner"
-                              checked={!!fastingDates[formatDateToYYYYMMDD(selectedPlannerDate)]}
-                              onChange={() => handleToggleFastingDay(selectedPlannerDate)}
-                              className="form-checkbox h-5 w-5 text-indigo-600 rounded"
-                          />
-                          <label htmlFor="isFastingDayPlanner" className="ml-2 text-lg font-medium text-gray-700">
-                              Mark as Fasting Day
-                          </label>
-                      </div>
-
-                      {/* Base Template Selection */}
-                      <div className="flex items-center space-x-2 mb-4">
-                          <label htmlFor="baseTemplateSelect" className="block text-sm font-medium text-gray-700">Apply Base Template:</label>
-                          <select
-                              id="baseTemplateSelect"
-                              value={selectedBaseTemplate}
-                              onChange={(e) => setSelectedBaseTemplate(e.target.value)}
-                              className="p-2 border border-gray-300 rounded-md"
-                          >
-                              <option value="weekday">Weekday</option>
-                              <option value="weekend">Weekend</option>
-                              <option value="jumuah">Jumu'ah</option>
-                              <option value="fasting">Fasting Day</option>
-                          </select>
-                          <button
-                              onClick={handleApplyTemplateToDailyPlan}
-                              className="px-4 py-2 bg-blue-500 text-white rounded-md shadow-md hover:bg-blue-600 transition-colors duration-200 flex items-center"
-                              aria-label="Apply selected template"
-                          >
-                              Apply Template
-                          </button>
-                      </div>
-
-                      <button
-                          onClick={handleAddDailyActivity}
-                          className="mb-4 px-4 py-2 bg-green-500 text-white rounded-md shadow-md hover:bg-green-600 transition-colors duration-200 flex items-center self-start"
-                          aria-label="Add New Activity to Daily Plan"
-                      >
-                          <Plus size={20} className="mr-2" /> Add New Activity to Daily Plan
-                      </button>
-
-                      {/* AI Schedule Refinement Input */}
-                      <div className="mt-6 p-4 bg-gray-50 rounded-lg shadow-inner mb-6">
-                        <h3 className="text-xl font-semibold text-indigo-700 mb-2">AI Schedule Refinement</h3>
-                        <textarea
-                          id="aiCommandInput"
-                          rows="3"
-                          placeholder="e.g., 'Move my morning exercise to 7 AM and make it 45 minutes long' or 'Shift all academic blocks 30 minutes later today'"
-                          className="w-full p-2 border border-gray-300 rounded-md mb-2"
-                          value={aiCommandInput}
-                          onChange={(e) => setAiCommandInput(e.target.value)}
-                        ></textarea>
-                        <button
-                          onClick={() => refineScheduleWithAI(aiCommandInput)}
-                          className="px-4 py-2 bg-purple-600 text-white rounded-md shadow-md hover:bg-purple-700 transition-colors flex items-center"
-                          aria-label="Refine schedule with AI"
-                        >
-                          <Play size={18} className="inline-block mr-1" /> Refine with AI
-                        </button>
-                      </div>
-
-                      {/* Daily Plan Editor (based on dailyCustomSchedules or derived) */}
-                      <div className="overflow-y-auto flex-grow">
-                          <table className="min-w-full bg-white rounded-lg shadow-md">
-                              <thead className="bg-indigo-100 sticky top-0 z-10">
-                                  <tr>
-                                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tl-lg">Activity</th>
-                                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Planned</th>
-                                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Type</th>
-                                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tr-lg">Actions</th>
-                                  </tr>
-                              </thead>
-                              <tbody>
-                                  {(() => {
-                                      const dateKey = formatDateToYYYYMMDD(selectedPlannerDate);
-                                      let currentDayActivities = dailyCustomSchedules[dateKey];
-
-                                      if (!currentDayActivities) {
-                                          currentDayActivities = generateScheduleForDate(selectedPlannerDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates);
-                                      }
-
-                                      const groupedDailyActivities = currentDayActivities.reduce((acc, activity) => {
-                                          const group = getTimeOfDayGroup(activity.plannedStart);
-                                          if (!acc[group]) { acc[group] = []; }
-                                          acc[group].push(activity);
-                                          return acc;
-                                      }, {});
-
-                                      return timeOfDayOrder.map(groupName => {
-                                          const activitiesInGroup = groupedDailyActivities[groupName];
-                                          if (!activitiesInGroup || activitiesInGroup.length === 0) return null;
-
-                                          const isCollapsed = collapsedSections[`daily-editor-${groupName}`];
-
-                                          return (
-                                              <React.Fragment key={`daily-editor-${groupName}`}>
-                                                  <tr className="bg-indigo-200 sticky top-12 z-10">
-                                                      <td colSpan="4" className="py-2 px-4 text-left text-md font-bold text-indigo-800 cursor-pointer" onClick={() => toggleSection(`daily-editor-${groupName}`)}>
-                                                          {groupName.replace('-', ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-                                                          <span className="ml-2">{isCollapsed ? '▼' : '▲'}</span>
-                                                      </td>
-                                                  </tr>
-                                                  {!isCollapsed && activitiesInGroup.map((activity) => (
-                                                      <tr key={activity.id} className="border-b border-gray-200 hover:bg-gray-50">
-                                                          <td className="py-3 px-4 text-sm font-medium text-gray-700">
-                                                              {activity.activity}
-                                                              <span className="block text-xs text-gray-500">
-                                                                  {activity.plannedStart} - {activity.plannedEnd}
-                                                              </span>
-                                                          </td>
-                                                          <td className="py-3 px-4 text-sm text-gray-600">
-                                                              {getPlannedDuration(activity.plannedStart, activity.plannedEnd, selectedPlannerDate).toFixed(2)} hrs
-                                                          </td>
-                                                          <td className="py-3 px-4 text-sm text-gray-600 capitalize">{activity.type}</td>
-                                                          <td className="py-3 px-4 text-sm">
-                                                              <div className="flex space-x-2">
-                                                                  <button
-                                                                      onClick={() => handleEditDailyActivity(activity)}
-                                                                      className="p-2 bg-blue-500 text-white rounded-md text-xs hover:bg-blue-600 transition-colors duration-200"
-                                                                      aria-label={`Edit ${activity.activity}`}
-                                                                  >
-                                                                      <Edit size={16} />
-                                                                  </button>
-                                                                  <button
-                                                                      onClick={() => handleDeleteDailyActivity(activity.id)}
-                                                                      className="p-2 bg-red-500 text-white rounded-md text-xs hover:bg-red-600 transition-colors duration-200"
-                                                                      aria-label={`Delete ${activity.activity}`}
-                                                                  >
-                                                                      <Trash2 size={16} />
-                                                                  </button>
-                                                              </div>
-                                                          </td>
-                                                      </tr>
-                                                  ))}
-                                              </React.Fragment>
-                                          );
-                                      });
-                                  })()}
-                              </tbody>
-                          </table>
-                      </div>
-
-                      {/* Visual Planner Timeline for Daily Editor */}
-                      <div ref={plannerTimelineRef} className="relative w-full h-[1440px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200 mt-6">
-                      {/* Time Grid Lines and Labels */}
-                      {[...Array(25)].map((_, hour) => (
-                          <React.Fragment key={hour}>
-                          <div
-                              className="absolute left-0 w-full border-t border-gray-200 text-xs text-gray-500 pl-2"
-                              style={{ top: `${(hour / 24) * 100}%`, height: '1px' }}
-                          >
-                              <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:00</span>
-                          </div>
-                          {hour < 24 && (
-                              <>
-                              <div
-                                  className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                                  style={{ top: `${(hour / 24) * 100 + (15 / 1440) * 100}%`, height: '1px' }}
-                              >
-                                  <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:15</span>
-                              </div>
-                              <div
-                                  className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                                  style={{ top: `${(hour / 24) * 100 + (30 / 1440) * 100}%`, height: '1px' }}
-                              >
-                                  <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:30</span>
-                              </div>
-                              <div
-                                  className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                                  style={{ top: `${(hour / 24) * 100 + (45 / 1440) * 100}%`, height: '1px' }}
-                              >
-                                  <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:45</span>
-                              </div>
-                              </>
-                          )}
-                          </React.Fragment>
-                      ))}
-
-                      {/* Activity Blocks for Daily Editor */}
-                      {dailyCustomSchedules[formatDateToYYYYMMDD(selectedPlannerDate)] && dailyCustomSchedules[formatDateToYYYYMMDD(selectedPlannerDate)].sort((a,b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)).map(activity => {
-                          const { top, height } = calculateBlockStyles(activity);
-                          const activityNameLower = activity.activity.toLowerCase();
-
-                          let bgColor = 'bg-indigo-200';
-                          if (activity.type === 'academic') bgColor = 'bg-blue-200';
-                          if (activity.type === 'spiritual') bgColor = 'bg-green-200';
-                          if (activity.type === 'physical') bgColor = 'bg-red-200';
-                          if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
-
-                          return (
-                          <div
-                              key={activity.id}
-                              className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
-                              ${bgColor}
-                              ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
-                              `}
-                              style={{ top, height }}
-                              onMouseDown={(e) => handleMouseDown(e, activity.id, 'move', true)}
-                              onDoubleClick={() => handleEditDailyActivity(activity)}
-                              title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
-                          >
-                              {/* Top Resize Handle */}
-                              <div
-                              className="absolute top-0 left-0 right-0 h-2 -mt-1 cursor-ns-resize z-30"
-                              onMouseDown={(e) => handleMouseDown(e, activity.id, 'top', true)}
-                              ></div>
-                              <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
-                              <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
-                              {/* Bottom Resize Handle */}
-                              <div
-                              className="absolute bottom-0 left-0 right-0 h-2 -mb-1 cursor-ns-resize z-30"
-                              onMouseDown={(e) => handleMouseDown(e, activity.id, 'bottom', true)}
-                              ></div>
-                          </div>
-                          );
-                      })}
-                      </div>
-                      <p className="text-sm text-gray-500 mt-4">Double-click an activity to edit details. Drag activities to adjust their times. Drag top/bottom edges to resize. Changes here only affect this specific day.</p>
-                  </>
+                  <p className="text-sm text-gray-500">No activities defined for this day type yet. Click "Add New Activity" to start!</p>
               )}
+              </div>
+
+
+              {/* Visual Planner Timeline for Templates */}
+              <div ref={plannerTimelineRef} className="relative w-full h-[720px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200">
+              {/* Time Grid Lines and Labels */}
+              {[...Array(25)].map((_, hour) => (
+                  <React.Fragment key={hour}>
+                  <div
+                      className="absolute left-0 w-full border-t border-gray-200 text-xs text-gray-500 pl-2"
+                      style={{ top: `${(hour / 24) * 100}%`, height: '1px' }}
+                  >
+                      <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:00</span>
+                  </div>
+                  {hour < 24 && (
+                      <>
+                      <div
+                          className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                          style={{ top: `${(hour / 24) * 100 + (15 / 1440) * 100}%`, height: '1px' }}
+                      >
+                          <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:15</span>
+                      </div>
+                      <div
+                          className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                          style={{ top: `${(hour / 24) * 100 + (30 / 1440) * 100}%`, height: '1px' }}
+                      >
+                          <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:30</span>
+                      </div>
+                      <div
+                          className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                          style={{ top: `${(hour / 24) * 100 + (45 / 1440) * 100}%`, height: '1px' }}
+                      >
+                          <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:45</span>
+                      </div>
+                      </>
+                  )}
+                  </React.Fragment>
+              ))}
+
+              {/* Activity Blocks */}
+              {plannerSchedule[activePlannerDayType] && plannerSchedule[activePlannerDayType].sort((a,b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)).map(activity => {
+                  const { top, height } = calculateBlockStyles(activity);
+                  const activityNameLower = activity.activity.toLowerCase();
+
+                  let bgColor = 'bg-indigo-200';
+                  if (activity.type === 'academic') bgColor = 'bg-blue-200';
+                  if (activity.type === 'spiritual') bgColor = 'bg-green-200';
+                  if (activity.type === 'physical') bgColor = 'bg-red-200';
+                  if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
+
+
+                  return (
+                  <div
+                      key={activity.id}
+                      className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
+                      ${bgColor}
+                      ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
+                      `}
+                      style={{ top, height }}
+                      onMouseDown={(e) => handleMouseDown(e, activity.id, 'move')} // This will now modify dailyCustomSchedules
+                      onDoubleClick={() => handleEditTemplateActivity(activity)}
+                      title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
+                  >
+                      {/* Top Resize Handle */}
+                      <div
+                      className="absolute top-0 left-0 right-0 h-2 -mt-1 cursor-ns-resize z-30"
+                      onMouseDown={(e) => handleMouseDown(e, activity.id, 'top')} // This will now modify dailyCustomSchedules
+                      ></div>
+                      <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
+                      <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
+                      {/* Bottom Resize Handle */}
+                      <div
+                      className="absolute bottom-0 left-0 right-0 h-2 -mb-1 cursor-ns-resize z-30"
+                      onMouseDown={(e) => handleMouseDown(e, activity.id, 'bottom')} // This will now modify dailyCustomSchedules
+                      ></div>
+                  </div>
+                  );
+              })}
+              </div>
+
+              <p className="text-sm text-gray-500 mt-4">Double-click an activity to edit details. Drag activities to adjust their times. Drag top/bottom edges to resize.</p>
             </div>
           )}
 
@@ -2840,7 +2723,7 @@ function App() {
                                 ${taskStatus === 'overdue' ? 'text-red-600' : ''}
                                 ${taskStatus === 'in-progress' ? 'text-blue-600' : ''}
                               `}>
-                                {taskStatus.replace('-', ' ')}
+                                {taskStatus.replace('-', ' ')}.
                               </span>
                             </td>
                             <td className="py-3 px-4 text-sm">
@@ -3101,139 +2984,14 @@ function App() {
           Built with React and Tailwind CSS. Data saved in browser's local storage.
         </footer>
 
-        {/* Planner Modal */}
-        {isPlannerModalOpen && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md max-h-full overflow-y-auto relative">
-              <button
-                onClick={handleCancelEdit}
-                className="absolute top-3 right-3 p-1 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
-                aria-label="Close modal"
-              >
-                <X size={20} />
-              </button>
-              <h3 className="text-xl font-semibold text-indigo-700 mb-4">
-                {editingActivity?.isNew ? 'Add New Activity' : 'Edit Activity'}
-              </h3>
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="activityName" className="block text-sm font-medium text-gray-700">Activity Name</label>
-                  <input
-                    type="text"
-                    id="activityName"
-                    value={editingActivity?.activity || ''}
-                    onChange={(e) => setEditingActivity(prev => ({ ...prev, activity: e.target.value }))}
-                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="plannedStart" className="block text-sm font-medium text-gray-700">Planned Start (HH:MM)</label>
-                  <input
-                    type="time"
-                    id="plannedStart"
-                    value={editingActivity?.plannedStart || '09:00'}
-                    onChange={(e) => setEditingActivity(prev => ({ ...prev, plannedStart: e.target.value }))}
-                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="plannedEnd" className="block text-sm font-medium text-gray-700">Planned End (HH:MM)</label>
-                  <input
-                    type="time"
-                    id="plannedEnd"
-                    value={editingActivity?.plannedEnd || '10:00'}
-                    onChange={(e) => setEditingActivity(prev => ({ ...prev, plannedEnd: e.target.value }))}
-                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="activityType" className="block text-sm font-medium text-gray-700">Type</label>
-                  <select
-                    id="activityType"
-                    value={editingActivity?.type || 'personal'}
-                    onChange={(e) => setEditingActivity(prev => ({ ...prev, type: e.target.value }))}
-                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                  >
-                    <option value="personal">Personal</option>
-                    <option value="academic">Academic</option>
-                    <option value="spiritual">Spiritual</option>
-                    <option value="physical">Physical</option>
-                  </select>
-                </div>
-                {!isEditingDailySchedule && (
-                  <div>
-                    <label htmlFor="recurrenceType" className="block text-sm font-medium text-gray-700">Recurrence</label>
-                    <select
-                      id="recurrenceType"
-                      value={editingActivity?.recurrenceType || 'none'}
-                      onChange={(e) => setEditingActivity(prev => ({ ...prev, recurrenceType: e.target.value, recurrenceDays: e.target.value === 'daily' ? [] : prev.recurrenceDays }))}
-                      className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                    >
-                      <option value="none">Does not repeat</option>
-                      <option value="daily">Daily</option>
-                      <option value="weekly">Weekly</option>
-                    </select>
-                  </div>
-                )}
-                {!isEditingDailySchedule && editingActivity?.recurrenceType === 'weekly' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Repeat on</label>
-                    <div className="mt-1 grid grid-cols-3 gap-2">
-                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
-                        <label key={day} className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={editingActivity.recurrenceDays.includes(index)}
-                            onChange={(e) => {
-                              const newRecurrenceDays = e.target.checked
-                                ? [...editingActivity.recurrenceDays, index]
-                                : editingActivity.recurrenceDays.filter(d => d !== index);
-                              setEditingActivity(prev => ({ ...prev, recurrenceDays: newRecurrenceDays.sort((a,b) => a-b) }));
-                            }}
-                            className="form-checkbox h-4 w-4 text-indigo-600 rounded"
-                          />
-                          <span className="ml-2 text-sm text-gray-700">{day}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div>
-                  <label htmlFor="constraintType" className="block text-sm font-medium text-gray-700">Constraint Type</label>
-                  <select
-                    id="constraintType"
-                    value={editingActivity?.constraintType || 'adjustable'}
-                    onChange={(e) => setEditingActivity(prev => ({ ...prev, constraintType: e.target.value }))}
-                    className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                  >
-                    <option value="hard">Hard (Non-negotiable)</option>
-                    <option value="adjustable">Adjustable (Can be shifted/shrunk)</option>
-                    <option value="removable">Removable (Can be deleted in conflict)</option>
-                  </select>
-                </div>
-              </div>
-              <div className="mt-6 flex justify-end space-x-3">
-                <button
-                  onClick={handleCancelEdit}
-                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
-                >
-                  <X size={18} className="inline-block mr-1" /> Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    if (isEditingDailySchedule) {
-                      handleSaveDailyActivity(editingActivity);
-                    } else {
-                      handleSaveTemplateActivity(editingActivity);
-                    }
-                  }}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-                >
-                  <Save size={18} className="inline-block mr-1" /> Save Activity
-                </button>
-              </div>
-            </div>
-          </div>
+        {/* Activity Modal (Renamed from PlannerModal) */}
+        {isActivityModalOpen && (
+          <ActivityModal
+            onClose={handleCancelEdit}
+            onSave={isEditingDailySchedule ? handleSaveDailyActivity : handleSaveTemplateActivity}
+            editingActivity={editingActivity}
+            isEditingDailySchedule={isEditingDailySchedule} // Pass this prop to the modal
+          />
         )}
 
         {/* Task Modal */}
@@ -3555,6 +3313,146 @@ function App() {
     </ErrorBoundary>
   );
 }
+
+// ActivityModal Component (Renamed from PlannerModal)
+const ActivityModal = ({ onClose, onSave, editingActivity, isEditingDailySchedule }) => {
+  const [activity, setActivity] = useState(editingActivity || {
+    id: `new-${Date.now()}`, activity: '', plannedStart: '09:00', plannedEnd: '10:00',
+    type: 'personal', recurrenceType: 'none', recurrenceDays: [], constraintType: 'adjustable', isNew: true,
+  });
+
+  const handleSave = () => {
+    onSave(activity);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md max-h-full overflow-y-auto relative">
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 p-1 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+          aria-label="Close modal"
+        >
+          <X size={20} />
+        </button>
+        <h3 className="text-xl font-semibold text-indigo-700 mb-4">
+          {activity?.isNew ? 'Add New Activity' : 'Edit Activity'}
+        </h3>
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="activityName" className="block text-sm font-medium text-gray-700">Activity Name</label>
+            <input
+              type="text"
+              id="activityName"
+              value={activity?.activity || ''}
+              onChange={(e) => setActivity(prev => ({ ...prev, activity: e.target.value }))}
+              className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+            />
+          </div>
+          <div>
+            <label htmlFor="plannedStart" className="block text-sm font-medium text-gray-700">Planned Start (HH:MM)</label>
+            <input
+              type="time"
+              id="plannedStart"
+              value={activity?.plannedStart || '09:00'}
+              onChange={(e) => setActivity(prev => ({ ...prev, plannedStart: e.target.value }))}
+              className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+            />
+          </div>
+          <div>
+            <label htmlFor="plannedEnd" className="block text-sm font-medium text-gray-700">Planned End (HH:MM)</label>
+            <input
+              type="time"
+              id="plannedEnd"
+              value={activity?.plannedEnd || '10:00'}
+              onChange={(e) => setActivity(prev => ({ ...prev, plannedEnd: e.target.value }))}
+              className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+            />
+          </div>
+          <div>
+            <label htmlFor="activityType" className="block text-sm font-medium text-gray-700">Type</label>
+            <select
+              id="activityType"
+              value={activity?.type || 'personal'}
+              onChange={(e) => setActivity(prev => ({ ...prev, type: e.target.value }))}
+              className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+            >
+              <option value="personal">Personal</option>
+              <option value="academic">Academic</option>
+              <option value="spiritual">Spiritual</option>
+              <option value="physical">Physical</option>
+            </select>
+          </div>
+          {!isEditingDailySchedule && ( // Only show recurrence for template editing
+            <div>
+              <label htmlFor="recurrenceType" className="block text-sm font-medium text-gray-700">Recurrence</label>
+              <select
+                id="recurrenceType"
+                value={activity?.recurrenceType || 'none'}
+                onChange={(e) => setActivity(prev => ({ ...prev, recurrenceType: e.target.value, recurrenceDays: e.target.value === 'daily' ? [] : prev.recurrenceDays }))}
+                className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+              >
+                <option value="none">Does not repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </div>
+          )}
+          {!isEditingDailySchedule && activity?.recurrenceType === 'weekly' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Repeat on</label>
+              <div className="mt-1 grid grid-cols-3 gap-2">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+                  <label key={day} className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={activity.recurrenceDays.includes(index)}
+                      onChange={(e) => {
+                        const newRecurrenceDays = e.target.checked
+                          ? [...activity.recurrenceDays, index]
+                          : activity.recurrenceDays.filter(d => d !== index);
+                        setActivity(prev => ({ ...prev, recurrenceDays: newRecurrenceDays.sort((a,b) => a-b) }));
+                      }}
+                      className="form-checkbox h-4 w-4 text-indigo-600 rounded"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">{day}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <label htmlFor="constraintType" className="block text-sm font-medium text-gray-700">Constraint Type</label>
+            <select
+              id="constraintType"
+              value={activity?.constraintType || 'adjustable'}
+              onChange={(e) => setActivity(prev => ({ ...prev, constraintType: e.target.value }))}
+              className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+            >
+              <option value="hard">Hard (Non-negotiable)</option>
+              <option value="adjustable">Adjustable (Can be shifted/shrunk)</option>
+              <option value="removable">Removable (Can be deleted in conflict)</option>
+            </select>
+          </div>
+        </div>
+        <div className="mt-6 flex justify-end space-x-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+          >
+            <X size={18} className="inline-block mr-1" /> Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+          >
+            <Save size={18} className="inline-block mr-1" /> Save Activity
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // AssignTaskModal Component (kept here for single-file output)
 const AssignTaskModal = ({ onClose, projectTasks, dailyScheduleState, currentDate, onAssign, assigningToActivity, assigningFromTask }) => {
