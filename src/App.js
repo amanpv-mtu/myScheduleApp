@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit, Plus, Trash2, Save, X, Clock, CheckCircle, AlertCircle, PlayCircle, StopCircle, RefreshCcw, Link, Upload, Download, BellRing, Square, Info } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Play, Pause, RotateCcw, BarChart2, CalendarDays, ChevronLeft, ChevronRight, Settings, FastForward, Edit, Plus, Trash2, Save, X, Clock, CheckCircle, AlertCircle, PlayCircle, StopCircle, RefreshCcw, Link, Download, BellRing, Square, Info } from 'lucide-react';
 
 // Tailwind CSS is assumed to be available in the environment.
 
@@ -40,9 +40,8 @@ const formatDateToYYYYMMDD = (date) => {
 const getTimeOfDayGroup = (timeStr) => {
   const [hours, minutes] = timeStr.split(':').map(Number);
   if ((hours > 21 || (hours === 21 && minutes >= 55)) || (hours >= 0 && hours < 5)) return 'night';
-  if (hours >= 5 && hours < 9) return 'early-morning';
-  if (hours >= 9 && hours < 13) return 'midday';
-  if (hours >= 13 && hours < 19) return 'afternoon';
+  if (hours >= 5 && hours < 9) return 'morning'; // Renamed from early-morning
+  if (hours >= 9 && hours < 19) return 'afternoon'; // Combined midday into afternoon
   if (hours >= 19 && (hours < 21 || (hours === 21 && minutes < 55))) return 'evening';
   return '';
 };
@@ -454,9 +453,7 @@ function App() {
   });
 
   const [activePlannerDayType, setActivePlannerDayType] = useState('weekday'); // This is for template editing
-  // const [plannerViewMode, setPlannerViewMode] = useState('daily'); // No longer needed, as daily is merged into schedule
 
-  const [selectedPlannerDate, setSelectedPlannerDate] = useState(new Date()); // For daily custom schedule in planner tab
   const [dailyCustomSchedules, setDailyCustomSchedules] = useState(() => {
     try {
       const savedCustomSchedules = localStorage.getItem('dailyCustomSchedules');
@@ -543,6 +540,9 @@ function App() {
       setToast(null);
     }, duration);
   }, []);
+
+  // State for switching between calendar and list view
+  const [scheduleViewMode, setScheduleViewMode] = useState('calendar');
 
 
   // --- Effects for Local Storage ---
@@ -837,18 +837,19 @@ function App() {
     setCurrentDate(newDate);
   };
 
-  const handleToggleFastingDay = (date) => {
-    const dateYYYYMMDD = formatDateToYYYYMMDD(date);
-    setFastingDates(prev => {
-      const newFastingDates = { ...prev };
-      if (newFastingDates[dateYYYYMMDD]) {
-        delete newFastingDates[dateYYYYMMDD];
-      } else {
-        newFastingDates[dateYYYYMMDD] = true;
-      }
-      return newFastingDates;
-    });
-  };
+  // Removed handleToggleFastingDay as per request
+  // const handleToggleFastingDay = (date) => {
+  //   const dateYYYYMMDD = formatDateToYYYYMMDD(date);
+  //   setFastingDates(prev => {
+  //     const newFastingDates = { ...prev };
+  //     if (newFastingDates[dateYYYYMMDD]) {
+  //       delete newFastingDates[dateYYYYMMDD];
+  //     } else {
+  //       newFastingDates[dateYYYYMMDD] = true;
+  //     }
+  //     return newFastingDates;
+  //   });
+  // };
 
   const getReportData = useCallback(() => {
     const reportDateStr = reportDate.toISOString().split('T')[0];
@@ -1310,7 +1311,7 @@ function App() {
     return acc;
   }, {});
 
-  const timeOfDayOrder = ['early-morning', 'midday', 'afternoon', 'evening', 'night'];
+  const timeOfDayOrder = ['morning', 'afternoon', 'evening', 'night']; // Updated order
 
   const getEisenhowerQuadrant = useCallback((task) => {
     const { urgency, importance } = task;
@@ -1409,21 +1410,20 @@ function App() {
     const rect = activityElement.getBoundingClientRect();
     const timelineRect = plannerTimelineRef.current.getBoundingClientRect();
 
-    const currentSchedule = dailyCustomSchedules[formatDateToYYYYMMDD(currentDate)] || dailyScheduleState;
+    const dateKey = formatDateToYYYYMMDD(currentDate);
+    // Ensure currentDayActivities is a mutable copy of the schedule for the current day
+    // If no custom schedule exists for this day, initialize it from the generated schedule before modifying
+    let currentDayActivities = dailyCustomSchedules[dateKey] ? [...dailyCustomSchedules[dateKey]] :
+                                 generateScheduleForDate(currentDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates);
 
-    if (!currentSchedule) return;
-
-    let activityToModify = currentSchedule.find(act => act.id === activityId); // Changed to 'let'
+    let activityToModify = currentDayActivities.find(act => act.id === activityId);
     if (!activityToModify) return;
 
-    // If no custom schedule for today, create one from the generated schedule before modifying
-    if (!dailyCustomSchedules[formatDateToYYYYMMDD(currentDate)]) {
-        const generated = generateScheduleForDate(currentDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates);
-        setDailyCustomSchedules(prev => ({ ...prev, [formatDateToYYYYMMDD(currentDate)]: generated }));
-        // Update activityToModify reference after state update
-        activityToModify = generated.find(act => act.id === activityId);
+    // If we just initialized currentDayActivities, we need to save it back to dailyCustomSchedules
+    // before starting the drag/resize to ensure future updates apply to this new custom schedule.
+    if (!dailyCustomSchedules[dateKey]) {
+        setDailyCustomSchedules(prev => ({ ...prev, [dateKey]: currentDayActivities }));
     }
-
 
     if (type === 'move') {
       setDraggingActivity({
@@ -1431,14 +1431,14 @@ function App() {
         initialStart: activityToModify.plannedStart,
         initialEnd: activityToModify.plannedEnd,
       });
-    } else {
+    } else { // type is 'top' or 'bottom' for resizing
       setResizingActivity({
         id: activityId, startY: e.clientY, initialHeight: rect.height, initialTop: rect.top - timelineRect.top,
         type: type, initialStart: activityToModify.plannedStart,
         initialEnd: activityToModify.plannedEnd,
       });
     }
-  }, [dailyCustomSchedules, currentDate, dailyScheduleState, plannerSchedule, fastingDates]);
+  }, [dailyCustomSchedules, currentDate, dailyScheduleState, plannerSchedule, fastingDates]); // Retained dailyCustomSchedules as it's modified here
 
   const handleMouseMove = useCallback((e) => {
     const dateKey = formatDateToYYYYMMDD(currentDate);
@@ -1457,8 +1457,9 @@ function App() {
       let newEndMinutes = newStartMinutes + durationMinutes;
 
       // Handle wrap around for new times
-      if (newStartMinutes < 0) { newStartMinutes += 1440; newEndMinutes += 1440; }
-      else if (newStartMinutes >= 1440) { newStartMinutes -= 1440; newEndMinutes -= 1440; }
+      newStartMinutes = (newStartMinutes + 1440) % 1440;
+      newEndMinutes = (newEndMinutes + 1440) % 1440;
+
 
       setDailyCustomSchedules(prev => {
         const currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] : dailyScheduleState; // Use dailyScheduleState as base if no custom
@@ -1478,18 +1479,24 @@ function App() {
         const currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] : dailyScheduleState; // Use dailyScheduleState as base if no custom
         const updatedSchedule = currentDaySchedule.map(activity => {
           if (activity.id === resizingActivity.id) {
-            let newStartMinutes = timeToMinutes(resizingActivity.initialStart);
-            let newEndMinutes = timeToMinutes(resizingActivity.initialEnd);
-            if (newEndMinutes < newStartMinutes) newEndMinutes += 1440;
+            let currentStartMinutes = timeToMinutes(resizingActivity.initialStart);
+            let currentEndMinutes = timeToMinutes(resizingActivity.initialEnd);
+            if (currentEndMinutes < currentStartMinutes) currentEndMinutes += 1440; // Handle overnight
+
+            let newStartMinutes = currentStartMinutes;
+            let newEndMinutes = currentEndMinutes;
 
             if (resizingActivity.type === 'bottom') {
-              newEndMinutes = (timeToMinutes(resizingActivity.initialEnd) + minutesDelta);
-              if (newEndMinutes < newStartMinutes) newEndMinutes += 1440;
-              if (newEndMinutes < newStartMinutes + 1) newEndMinutes = newStartMinutes + 1; // Minimum 1 minute duration
+              newEndMinutes = currentEndMinutes + minutesDelta;
+              if (newEndMinutes <= newStartMinutes) newEndMinutes = newStartMinutes + 1; // Ensure at least 1 minute duration
             } else if (resizingActivity.type === 'top') {
-              newStartMinutes = (timeToMinutes(resizingActivity.initialStart) + minutesDelta);
-              if (newStartMinutes > newEndMinutes - 1) newStartMinutes = newEndMinutes - 1; // Minimum 1 minute duration
+              newStartMinutes = currentStartMinutes + minutesDelta;
+              if (newStartMinutes >= newEndMinutes) newStartMinutes = newEndMinutes - 1; // Ensure at least 1 minute duration
             }
+
+            // Ensure times wrap around correctly if they cross midnight
+            newStartMinutes = (newStartMinutes + 1440) % 1440;
+            newEndMinutes = (newEndMinutes + 1440) % 1440;
 
             return { ...activity, plannedStart: minutesToTime(newStartMinutes), plannedEnd: minutesToTime(newEndMinutes), };
           }
@@ -1498,7 +1505,7 @@ function App() {
         return { ...prev, [dateKey]: updatedSchedule };
       });
     }
-  }, [draggingActivity, resizingActivity, dailyCustomSchedules, currentDate, dailyScheduleState]);
+  }, [draggingActivity, resizingActivity, dailyCustomSchedules, currentDate, dailyScheduleState]); // Retained dailyCustomSchedules as it's modified here
 
   const handleMouseUp = useCallback(() => {
     setDraggingActivity(null);
@@ -1534,7 +1541,7 @@ function App() {
     const heightPx = durationMinutes * pixelsPerMinute;
 
     return { top: `${topPx}px`, height: `${heightPx}px`, };
-  }, []);
+  }, [plannerTimelineRef]); // Removed dailyCustomSchedules from dependencies as it's not directly used here
 
   // Effect to update dailyScheduleState whenever currentDate or underlying data changes
   useEffect(() => {
@@ -1565,33 +1572,35 @@ function App() {
       required: ["action"]
     };
 
-    const chatHistory = [];
-    chatHistory.push({ role: "user", parts: [{ text: `Parse this schedule modification request into JSON: "${userInput}". Be precise with activity names and times. If a time is not specified, do not include it. Infer 'today' if no date is given. If duration is changed, calculate newPlannedEnd based on newPlannedStart. If an activity name is not clear, suggest options. Use the current date as ${formatDateToYYYYMMDD(currentDate)} for 'today'.` }] });
+    const messages = [];
+    messages.push({ role: "user", content: `Parse this schedule modification request into JSON: "${userInput}". Be precise with activity names and times. If a time is not specified, do not include it. Infer 'today' if no date is given. If duration is changed, calculate newPlannedEnd based on newPlannedStart. If an activity name is not clear, suggest options. Use the current date as ${formatDateToYYYYMMDD(currentDate)} for 'today'.` });
 
     const payload = {
-      contents: chatHistory,
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: responseSchema
+      model: "deepseek-chat", // Specify Deepseek model
+      messages: messages,
+      response_format: {
+        type: "json_object",
+        schema: responseSchema // Deepseek uses response_format with schema
       }
     };
 
-    const apiKey = ""; // Canvas will automatically provide this at runtime
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const apiKey = "sk-a70b20df144847ed9ed258eec2b563ec"; // Canvas will automatically provide this at runtime
+    const apiUrl = `https://api.deepseek.com/chat/completions`; // Deepseek API endpoint
 
     try {
       const response = await fetch(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}` // Deepseek uses Authorization header
+        },
         body: JSON.stringify(payload)
       });
 
       const result = await response.json();
 
-      if (result.candidates && result.candidates.length > 0 &&
-          result.candidates[0].content && result.candidates[0].content.parts &&
-          result.candidates[0].content.parts.length > 0) {
-        const jsonString = result.candidates[0].content.parts[0].text;
+      if (result.choices && result.choices.length > 0 && result.choices[0].message && result.choices[0].message.content) {
+        const jsonString = result.choices[0].message.content;
         const parsedCommand = JSON.parse(jsonString);
         console.log("AI Parsed Command:", parsedCommand);
 
@@ -1772,8 +1781,8 @@ function App() {
         showToast("AI could not understand the command. Please try rephrasing.", "error");
       }
     } catch (error) {
-      console.error("Error calling Gemini API:", error);
-      showToast("Error communicating with AI. Please try again later.", "error");
+      console.error("Error calling Deepseek API:", error);
+      showToast(`Error communicating with AI: ${error.message}. Please check your API key and try again later.`, "error");
     }
   }, [currentDate, dailyCustomSchedules, plannerSchedule, fastingDates, showToast]);
 
@@ -1851,8 +1860,8 @@ function App() {
                 </button>
               </div>
 
-              {/* Fasting Day Checkbox */}
-              <div className="flex items-center justify-center mb-4">
+              {/* Removed Fasting Day Checkbox as per request */}
+              {/* <div className="flex items-center justify-center mb-4">
                   <input
                       type="checkbox"
                       id="isFastingDaySchedule"
@@ -1863,7 +1872,7 @@ function App() {
                   <label htmlFor="isFastingDaySchedule" className="ml-2 text-lg font-medium text-gray-700">
                       Mark as Fasting Day
                   </label>
-              </div>
+              </div> */}
 
               {/* Base Template Selection for Current Day */}
               <div className="flex items-center space-x-2 mb-4">
@@ -2132,286 +2141,313 @@ function App() {
                   <Plus size={20} className="mr-2" /> Add New Activity to Daily Plan
               </button>
 
-              {/* Visual Planner Timeline for Daily Editor (Now in Schedule Tab) */}
-              <div ref={plannerTimelineRef} className="relative w-full h-[720px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200 mb-6">
-                {/* Time Grid Lines and Labels */}
-                {[...Array(25)].map((_, hour) => (
-                    <React.Fragment key={hour}>
-                    <div
-                        className="absolute left-0 w-full border-t border-gray-200 text-xs text-gray-500 pl-2"
-                        style={{ top: `${(hour / 24) * 100}%`, height: '1px' }}
-                    >
-                        <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:00</span>
-                    </div>
-                    {hour < 24 && (
-                        <>
-                        <div
-                            className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                            style={{ top: `${(hour / 24) * 100 + (15 / 1440) * 100}%`, height: '1px' }}
-                        >
-                            <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:15</span>
-                        </div>
-                        <div
-                            className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                            style={{ top: `${(hour / 24) * 100 + (30 / 1440) * 100}%`, height: '1px' }}
-                        >
-                            <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:30</span>
-                        </div>
-                        <div
-                            className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
-                            style={{ top: `${(hour / 24) * 100 + (45 / 1440) * 100}%`, height: '1px' }}
-                        >
-                            <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:45</span>
-                        </div>
-                        </>
-                    )}
-                    </React.Fragment>
-                ))}
-
-                {/* "Now" Indicator Line */}
-                <div
-                  className="absolute left-0 right-0 h-0.5 bg-red-500 z-20 transition-all duration-1000 ease-linear"
-                  style={{ top: `${nowIndicatorTop}px` }}
-                >
-                  <div className="absolute -left-1.5 -top-1.5 w-3 h-3 rounded-full bg-red-500 border-2 border-white"></div>
-                  <span className="absolute left-4 -top-2 text-xs text-red-700 font-bold">Now</span>
-                </div>
-
-                {/* Activity Blocks for Daily Editor */}
-                {dailyScheduleState.sort((a,b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)).map(activity => {
-                    const { top, height } = calculateBlockStyles(activity);
-                    const activityNameLower = activity.activity.toLowerCase();
-
-                    let bgColor = 'bg-indigo-200';
-                    if (activity.type === 'academic') bgColor = 'bg-blue-200';
-                    if (activity.type === 'spiritual') bgColor = 'bg-green-200';
-                    if (activity.type === 'physical') bgColor = 'bg-red-200';
-                    if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
-
-                    return (
-                    <div
-                        key={activity.id}
-                        className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
-                        ${bgColor}
-                        ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
-                        `}
-                        style={{ top, height }}
-                        onMouseDown={(e) => handleMouseDown(e, activity.id, 'move')}
-                        onDoubleClick={() => handleEditDailyActivity(activity)}
-                        title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
-                    >
-                        {/* Top Resize Handle */}
-                        <div
-                        className="absolute top-0 left-0 right-0 h-2 -mt-1 cursor-ns-resize z-30"
-                        onMouseDown={(e) => handleMouseDown(e, activity.id, 'top')}
-                        ></div>
-                        <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
-                        <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
-                        {/* Bottom Resize Handle */}
-                        <div
-                        className="absolute bottom-0 left-0 right-0 h-2 -mb-1 cursor-ns-resize z-30"
-                        onMouseDown={(e) => handleMouseDown(e, activity.id, 'bottom')}
-                        ></div>
-                    </div>
-                    );
-                })}
+              {/* Schedule View Toggle Buttons */}
+              <div className="flex justify-center space-x-4 mb-4">
+                  <button
+                      onClick={() => setScheduleViewMode('calendar')}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                          scheduleViewMode === 'calendar' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                  >
+                      <CalendarDays className="inline-block mr-2" size={18} /> Calendar View
+                  </button>
+                  <button
+                      onClick={() => setScheduleViewMode('list')}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors duration-200 ${
+                          scheduleViewMode === 'list' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                  >
+                      <BarChart2 className="inline-block mr-2" size={18} /> List View
+                  </button>
               </div>
-              <p className="text-sm text-gray-500 mt-4 mb-6">Double-click an activity to edit details. Drag activities to adjust their times. Drag top/bottom edges to resize. Changes here only affect this specific day.</p>
 
+              {/* Conditional Rendering for Schedule Views */}
+              {scheduleViewMode === 'calendar' && (
+                <>
+                  {/* Visual Planner Timeline for Daily Editor (Now in Schedule Tab) */}
+                  <div ref={plannerTimelineRef} className="relative w-full h-[720px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200 mb-6">
+                    {/* Time Grid Lines and Labels */}
+                    {[...Array(25)].map((_, hour) => (
+                        <React.Fragment key={hour}>
+                        <div
+                            className="absolute left-0 w-full border-t border-gray-200 text-xs text-gray-500 pl-2"
+                            style={{ top: `${(hour / 24) * 100}%`, height: '1px' }}
+                        >
+                            <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:00</span>
+                        </div>
+                        {hour < 24 && (
+                            <>
+                            <div
+                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                style={{ top: `${(hour / 24) * 100 + (15 / 1440) * 100}%`, height: '1px' }}
+                            >
+                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:15</span>
+                            </div>
+                            <div
+                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                style={{ top: `${(hour / 24) * 100 + (30 / 1440) * 100}%`, height: '1px' }}
+                            >
+                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:30</span>
+                            </div>
+                            <div
+                                className="absolute left-0 w-full border-t border-gray-100 text-xs text-gray-400 pl-2"
+                                style={{ top: `${(hour / 24) * 100 + (45 / 1440) * 100}%`, height: '1px' }}
+                            >
+                                <span className="-translate-y-1/2 block">{hour.toString().padStart(2, '0')}:45</span>
+                            </div>
+                            </>
+                        )}
+                        </React.Fragment>
+                    ))}
 
-              {/* Scrollable Schedule Table (Detailed View) */}
-              <div className="overflow-y-auto flex-grow relative" ref={scheduleTableRef}>
-                <table className="min-w-full bg-white rounded-lg shadow-md">
-                  {/* Ref for thead to calculate "Now" line offset */}
-                  <thead className="bg-indigo-100 sticky top-0 z-10" ref={theadRef}>
-                    <tr>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tl-lg">Activity</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Planned</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual Start</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual End</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual Duration</th>
-                      <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tr-lg">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {timeOfDayOrder.map(groupName => {
-                      const activitiesInGroup = groupedSchedule[groupName];
-                      if (!activitiesInGroup || activitiesInGroup.length === 0) return null;
+                    {/* "Now" Indicator Line */}
+                    <div
+                      className="absolute left-0 right-0 h-0.5 bg-red-500 z-20 transition-all duration-1000 ease-linear"
+                      style={{ top: `${nowIndicatorTop}px` }}
+                    >
+                      <div className="absolute -left-1.5 -top-1.5 w-3 h-3 rounded-full bg-red-500 border-2 border-white"></div>
+                      <span className="absolute left-4 -top-2 text-xs text-red-700 font-bold">Now</span>
+                    </div>
 
-                      const isCollapsed = collapsedSections[groupName];
+                    {/* Activity Blocks for Daily Editor */}
+                    {dailyScheduleState.sort((a,b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)).map(activity => {
+                        const { top, height } = calculateBlockStyles(activity);
+                        const activityNameLower = activity.activity.toLowerCase();
 
-                      return (
-                        <React.Fragment key={groupName}>
-                          <tr className="bg-indigo-200 sticky top-12 z-10">
-                            <td colSpan="6" className="py-2 px-4 text-left text-md font-bold text-indigo-800 cursor-pointer" onClick={() => toggleSection(groupName)}>
-                              {groupName.replace('-', ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-                              <span className="ml-2">{isCollapsed ? '▼' : '▲'}</span>
-                            </td>
-                          </tr>
-                          {!isCollapsed && activitiesInGroup.map((activity) => {
-                            const log = getLogForActivity(activity.id);
-                            const assignedTaskInfo = getAssignedTaskInfo(activity.id);
-                            const actualDuration = getActualDuration(log);
-                            const progressBarPercentage = getProgressBarPercentage(activity.id);
-                            const isSubdividedBlock = (activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && activity.id.includes('-part');
-                            const currentActivityNotes = subTaskDetails[activity.id] || '';
-                            const timeGroup = getTimeOfDayGroup(activity.plannedStart);
-                            const activityNameLower = activity.activity.toLowerCase();
-                            const isPrayerBlock = activityNameLower.includes('iqamah & prayer') || activityNameLower.includes('prayer');
+                        let bgColor = 'bg-indigo-200';
+                        if (activity.type === 'academic') bgColor = 'bg-blue-200';
+                        if (activity.type === 'spiritual') bgColor = 'bg-green-200';
+                        if (activity.type === 'physical') bgColor = 'bg-red-200';
+                        if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
 
-                            let status = '';
-                            let statusIcon = null;
-                            const now = new Date();
-                            const plannedStart = parseTime(activity.plannedStart, currentDate);
-                            const plannedEnd = parseTime(activity.plannedEnd, currentDate);
-                            let activityEndToday = new Date(plannedEnd);
-                            if (plannedEnd < plannedStart) {
-                              activityEndToday.setDate(activityEndToday.getDate() + 1);
-                            }
+                        return (
+                        <div
+                            key={activity.id}
+                            className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
+                            ${bgColor}
+                            ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
+                            `}
+                            style={{ top, height }}
+                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'move')}
+                            onDoubleClick={() => handleEditDailyActivity(activity)}
+                            title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
+                        >
+                            {/* Top Resize Handle */}
+                            <div
+                            className="absolute top-0 left-0 right-0 h-2 -mt-1 cursor-ns-resize z-30"
+                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'top')}
+                            ></div>
+                            <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
+                            <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
+                            {/* Bottom Resize Handle */}
+                            <div
+                            className="absolute bottom-0 left-0 right-0 h-2 -mb-1 cursor-ns-resize z-30"
+                            onMouseDown={(e) => handleMouseDown(e, activity.id, 'bottom')}
+                            ></div>
+                        </div>
+                        );
+                    })}
+                  </div>
+                  <p className="text-sm text-gray-500 mt-4 mb-6">Double-click an activity to edit details. Drag activities to adjust their times. Drag top/bottom edges to resize. Changes here only affect this specific day.</p>
+                </>
+              )}
 
-                            let statusColor = '';
-                            if (log?.actualEnd) {
-                              status = 'Completed'; statusIcon = <CheckCircle size={14} className="inline-block mr-1" />; statusColor = 'text-green-600';
-                            } else if (log?.actualStart && !log?.actualEnd) {
-                              status = 'Started'; statusIcon = <PlayCircle size={14} className="inline-block mr-1" />; statusColor = 'text-blue-600';
-                            } else if (now > activityEndToday && !log?.actualEnd) {
-                              status = 'Overdue'; statusIcon = <AlertCircle size={14} className="inline-block mr-1" />; statusColor = 'text-red-600';
-                            } else {
-                              status = 'Scheduled'; statusIcon = <Clock size={14} className="inline-block mr-1" />; statusColor = 'text-gray-500';
-                            }
+              {scheduleViewMode === 'list' && (
+                <>
+                  {/* Scrollable Schedule Table (Detailed View) */}
+                  <div className="overflow-y-auto flex-grow relative" ref={scheduleTableRef}>
+                    <table className="min-w-full bg-white rounded-lg shadow-md">
+                      {/* Ref for thead to calculate "Now" line offset */}
+                      <thead className="bg-indigo-100 sticky top-0 z-10" ref={theadRef}>
+                        <tr>
+                          <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tl-lg">Activity</th>
+                          <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Planned</th>
+                          <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual Start</th>
+                          <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual End</th>
+                          <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700">Actual Duration</th>
+                          <th className="py-3 px-4 text-left text-sm font-semibold text-indigo-700 rounded-tr-lg">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {timeOfDayOrder.map(groupName => {
+                          const activitiesInGroup = groupedSchedule[groupName];
+                          if (!activitiesInGroup || activitiesInGroup.length === 0) return null;
 
-                            return (
-                              <tr
-                                key={activity.id}
-                                ref={el => activityRefs.current.set(activity.id, el)}
-                                className={`border-b border-gray-200 hover:bg-gray-50 relative
-                                  ${activity.id === currentActivityId ? 'bg-indigo-100 border-l-4 border-indigo-600' : ''}
-                                  ${isPrayerBlock
-                                    ? 'bg-green-50'
-                                    : (
-                                      timeGroup === 'night' ? 'bg-gray-100' :
-                                      timeGroup === 'early-morning' ? 'bg-sky-50' :
-                                      timeGroup === 'midday' ? 'bg-amber-50' :
-                                      timeGroup === 'afternoon' ? 'bg-teal-50' :
-                                      timeGroup === 'evening' ? 'bg-purple-50' : ''
-                                    )
-                                  }
-                                `}
-                              >
-                                <td className="py-3 px-4 text-sm font-medium text-gray-700">
-                                  <span className={`${isPrayerBlock ? 'font-bold' : ''}`}>
-                                    {activity.activity}
-                                  </span>
-                                  <span className="block text-xs text-gray-500">
-                                    {activity.plannedStart} - {activity.plannedEnd}
-                                  </span>
-                                  <span className={`block text-xs font-semibold ${statusColor}`}>
-                                    {statusIcon} {status}
-                                  </span>
-                                  {(isSubdividedBlock || assignedTaskInfo) && (
-                                    <div className="flex items-center text-xs text-gray-600 mt-1">
-                                      <span className="mr-1 text-indigo-500"><Edit size={12} /></span>
-                                      {assignedTaskInfo ? (
-                                        <span className="italic text-indigo-700">
-                                          {assignedTaskInfo.taskName}
-                                          {assignedTaskInfo.subtaskName && ` - ${assignedTaskInfo.subtaskName}`}
-                                        </span>
-                                      ) : editingSubTaskId === activity.id ? (
-                                        <input
-                                          type="text"
-                                          value={currentActivityNotes}
-                                          onChange={(e) => handleActivityNotesChange(activity.id, e.target.value)}
-                                          onBlur={() => handleActivityNotesBlur(activity.id)}
-                                          onKeyDown={(e) => handleActivityNotesKeyDown(e, activity.id)}
-                                          className="border-b border-indigo-400 focus:outline-none focus:border-indigo-600 text-sm bg-transparent w-full"
-                                          autoFocus
-                                          aria-label={`Edit activity notes for ${activity.activity}`}
-                                        />
-                                      ) : (
-                                        <span
-                                          onClick={() => setEditingSubTaskId(activity.id)}
-                                          className="cursor-pointer hover:text-indigo-700 italic"
-                                          role="button" tabIndex="0" aria-label={`Add or edit activity notes for ${activity.activity}`}
-                                        >
-                                          {currentActivityNotes || 'Click to add activity notes'}
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-                                  {log?.actualStart && !log?.actualEnd && progressBarPercentage > 0 && (
-                                    <div className="absolute bottom-0 left-0 h-1 bg-green-400 rounded-full"
-                                         style={{ width: `${progressBarPercentage}%` }}></div>
-                                  )}
-                                </td>
-                                <td className="py-3 px-4 text-sm text-gray-600">
-                                  {getPlannedDuration(activity.plannedStart, activity.plannedEnd, currentDate).toFixed(2)} hrs
-                                </td>
-                                <td className="py-3 px-4 text-sm text-gray-600">
-                                  {formatDateTime(log?.actualStart)}
-                                </td>
-                                <td className="py-3 px-4 text-sm text-gray-600">
-                                  {formatDateTime(log?.actualEnd)}
-                                </td>
-                                <td className="py-3 px-4 text-sm text-gray-600">{actualDuration > 0 ? `${actualDuration.toFixed(2)} hrs` : '-'}</td>
-                                <td className="py-3 px-4 text-sm">
-                                  <div className="flex space-x-2">
-                                    {!log?.actualStart && (
-                                      <button
-                                        onClick={() => logTime(activity.id, 'start')}
-                                        className="px-3 py-1 bg-blue-500 text-white rounded-md text-xs font-medium hover:bg-blue-600 transition-colors duration-200"
-                                        aria-label={`Start ${activity.activity}`}
-                                      >
-                                        <Play size={14} className="inline-block mr-1" /> Start
-                                      </button>
-                                    )}
-                                    {log?.actualStart && !log?.actualEnd && (
-                                      <button
-                                        onClick={() => logTime(activity.id, 'end')}
-                                        className="px-3 py-1 bg-purple-500 text-white rounded-md text-xs font-medium hover:bg-purple-600 transition-colors duration-200"
-                                        aria-label={`End ${activity.activity}`}
-                                      >
-                                        <StopCircle size={14} className="inline-block mr-1" /> End
-                                      </button>
-                                    )}
-                                    {log?.actualStart && (
-                                      <button
-                                        onClick={() => logTime(activity.id, 'reset')}
-                                        className="px-3 py-1 bg-red-500 text-white rounded-md text-xs font-medium hover:bg-red-600 transition-colors duration-200"
-                                        aria-label={`Reset ${activity.activity}`}
-                                      >
-                                        <RefreshCcw size={14} className="inline-block mr-1" /> Reset
-                                      </button>
-                                    )}
-                                    {(activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && (
-                                      assignedTaskInfo ? (
-                                        <button
-                                          onClick={() => handleUnassignTask(activity.id)}
-                                          className="px-3 py-1 bg-gray-500 text-white rounded-md text-xs font-medium hover:bg-gray-600 transition-colors duration-200"
-                                          aria-label={`Unassign task from ${activity.activity}`}
-                                        >
-                                          <Link size={14} className="inline-block mr-1 rotate-45" /> Unassign
-                                        </button>
-                                      ) : (
-                                        <button
-                                          onClick={() => openAssignTaskModal({ date: currentDate, activityId: activity.id })}
-                                          className="px-3 py-1 bg-indigo-500 text-white rounded-md text-xs font-medium hover:bg-indigo-600 transition-colors duration-200"
-                                          aria-label={`Assign task to ${activity.activity}`}
-                                        >
-                                          <Link size={14} className="inline-block mr-1" /> Assign
-                                        </button>
-                                      )
-                                    )}
-                                  </div>
+                          const isCollapsed = collapsedSections[groupName];
+
+                          return (
+                            <React.Fragment key={groupName}>
+                              <tr className="bg-indigo-200 sticky top-12 z-10">
+                                <td colSpan="6" className="py-2 px-4 text-left text-md font-bold text-indigo-800 cursor-pointer" onClick={() => toggleSection(groupName)}>
+                                  {groupName.replace('-', ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                                  <span className="ml-2">{isCollapsed ? '▼' : '▲'}</span>
                                 </td>
                               </tr>
-                            );
-                          })}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                              {!isCollapsed && activitiesInGroup.map((activity) => {
+                                const log = getLogForActivity(activity.id);
+                                const assignedTaskInfo = getAssignedTaskInfo(activity.id);
+                                const actualDuration = getActualDuration(log);
+                                const progressBarPercentage = getProgressBarPercentage(activity.id);
+                                const isSubdividedBlock = (activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && activity.id.includes('-part');
+                                const currentActivityNotes = subTaskDetails[activity.id] || '';
+                                const timeGroup = getTimeOfDayGroup(activity.plannedStart);
+                                const activityNameLower = activity.activity.toLowerCase();
+                                const isPrayerBlock = activityNameLower.includes('iqamah & prayer') || activityNameLower.includes('prayer');
+
+                                let status = '';
+                                let statusIcon = null;
+                                const now = new Date();
+                                const plannedStart = parseTime(activity.plannedStart, currentDate);
+                                const plannedEnd = parseTime(activity.plannedEnd, currentDate);
+                                let activityEndToday = new Date(plannedEnd);
+                                if (plannedEnd < plannedStart) {
+                                  activityEndToday.setDate(activityEndToday.getDate() + 1);
+                                }
+
+                                let statusColor = '';
+                                if (log?.actualEnd) {
+                                  status = 'Completed'; statusIcon = <CheckCircle size={14} className="inline-block mr-1" />; statusColor = 'text-green-600';
+                                } else if (log?.actualStart && !log?.actualEnd) {
+                                  status = 'Started'; statusIcon = <PlayCircle size={14} className="inline-block mr-1" />; statusColor = 'text-blue-600';
+                                } else if (now > activityEndToday && !log?.actualEnd) {
+                                  status = 'Overdue'; statusIcon = <AlertCircle size={14} className="inline-block mr-1" />; statusColor = 'text-red-600';
+                                } else {
+                                  status = 'Scheduled'; statusIcon = <Clock size={14} className="inline-block mr-1" />; statusColor = 'text-gray-500';
+                                }
+
+                                return (
+                                  <tr
+                                    key={activity.id}
+                                    ref={el => activityRefs.current.set(activity.id, el)}
+                                    className={`border-b border-gray-200 hover:bg-gray-50 relative
+                                      ${activity.id === currentActivityId ? 'bg-indigo-100 border-l-4 border-indigo-600' : ''}
+                                      ${isPrayerBlock
+                                        ? 'bg-green-50'
+                                        : (
+                                          timeGroup === 'night' ? 'bg-gray-100' :
+                                          timeGroup === 'morning' ? 'bg-sky-50' : // Updated from early-morning
+                                          timeGroup === 'afternoon' ? 'bg-teal-50' : // Midday is now afternoon
+                                          timeGroup === 'evening' ? 'bg-purple-50' : ''
+                                        )
+                                      }
+                                    `}
+                                  >
+                                    <td className="py-3 px-4 text-sm font-medium text-gray-700">
+                                      <span className={`${isPrayerBlock ? 'font-bold' : ''}`}>
+                                        {activity.activity}
+                                      </span>
+                                      <span className="block text-xs text-gray-500">
+                                        {activity.plannedStart} - {activity.plannedEnd}
+                                      </span>
+                                      <span className={`block text-xs font-semibold ${statusColor}`}>
+                                        {statusIcon} {status}
+                                      </span>
+                                      {(isSubdividedBlock || assignedTaskInfo) && (
+                                        <div className="flex items-center text-xs text-gray-600 mt-1">
+                                          <span className="mr-1 text-indigo-500"><Edit size={12} /></span>
+                                          {assignedTaskInfo ? (
+                                            <span className="italic text-indigo-700">
+                                              {assignedTaskInfo.taskName}
+                                              {assignedTaskInfo.subtaskName && ` - ${assignedTaskInfo.subtaskName}`}
+                                            </span>
+                                          ) : editingSubTaskId === activity.id ? (
+                                            <input
+                                              type="text"
+                                              value={currentActivityNotes}
+                                              onChange={(e) => handleActivityNotesChange(activity.id, e.target.value)}
+                                              onBlur={() => handleActivityNotesBlur(activity.id)}
+                                              onKeyDown={(e) => handleActivityNotesKeyDown(e, activity.id)}
+                                              className="border-b border-indigo-400 focus:outline-none focus:border-indigo-600 text-sm bg-transparent w-full"
+                                              autoFocus
+                                              aria-label={`Edit activity notes for ${activity.activity}`}
+                                            />
+                                          ) : (
+                                            <span
+                                              onClick={() => setEditingSubTaskId(activity.id)}
+                                              className="cursor-pointer hover:text-indigo-700 italic"
+                                              role="button" tabIndex="0" aria-label={`Add or edit activity notes for ${activity.activity}`}
+                                            >
+                                              {currentActivityNotes || 'Click to add activity notes'}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                      {log?.actualStart && !log?.actualEnd && progressBarPercentage > 0 && (
+                                        <div className="absolute bottom-0 left-0 h-1 bg-green-400 rounded-full"
+                                             style={{ width: `${progressBarPercentage}%` }}></div>
+                                      )}
+                                    </td>
+                                    <td className="py-3 px-4 text-sm text-gray-600">
+                                      {getPlannedDuration(activity.plannedStart, activity.plannedEnd, currentDate).toFixed(2)} hrs
+                                    </td>
+                                    <td className="py-3 px-4 text-sm text-gray-600">
+                                      {formatDateTime(log?.actualStart)}
+                                    </td>
+                                    <td className="py-3 px-4 text-sm text-gray-600">
+                                      {formatDateTime(log?.actualEnd)}
+                                    </td>
+                                    <td className="py-3 px-4 text-sm text-gray-600">{actualDuration > 0 ? `${actualDuration.toFixed(2)} hrs` : '-'}</td>
+                                    <td className="py-3 px-4 text-sm">
+                                      <div className="flex space-x-2">
+                                        {!log?.actualStart && (
+                                          <button
+                                            onClick={() => logTime(activity.id, 'start')}
+                                            className="px-3 py-1 bg-blue-500 text-white rounded-md text-xs font-medium hover:bg-blue-600 transition-colors duration-200"
+                                            aria-label={`Start ${activity.activity}`}
+                                          >
+                                            <Play size={14} className="inline-block mr-1" /> Start
+                                          </button>
+                                        )}
+                                        {log?.actualStart && !log?.actualEnd && (
+                                          <button
+                                            onClick={() => logTime(activity.id, 'end')}
+                                            className="px-3 py-1 bg-purple-500 text-white rounded-md text-xs font-medium hover:bg-purple-600 transition-colors duration-200"
+                                            aria-label={`End ${activity.activity}`}
+                                          >
+                                            <StopCircle size={14} className="inline-block mr-1" /> End
+                                          </button>
+                                        )}
+                                        {log?.actualStart && (
+                                          <button
+                                            onClick={() => logTime(activity.id, 'reset')}
+                                            className="px-3 py-1 bg-red-500 text-white rounded-md text-xs font-medium hover:bg-red-600 transition-colors duration-200"
+                                            aria-label={`Reset ${activity.activity}`}
+                                          >
+                                            <RefreshCcw size={14} className="inline-block mr-1" /> Reset
+                                          </button>
+                                        )}
+                                        {(activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && (
+                                          assignedTaskInfo ? (
+                                            <button
+                                              onClick={() => handleUnassignTask(activity.id)}
+                                              className="px-3 py-1 bg-gray-500 text-white rounded-md text-xs font-medium hover:bg-gray-600 transition-colors duration-200"
+                                              aria-label={`Unassign task from ${activity.activity}`}
+                                            >
+                                              <Link size={14} className="inline-block mr-1 rotate-45" /> Unassign
+                                            </button>
+                                          ) : (
+                                            <button
+                                              onClick={() => openAssignTaskModal({ date: currentDate, activityId: activity.id })}
+                                              className="px-3 py-1 bg-indigo-500 text-white rounded-md text-xs font-medium hover:bg-indigo-600 transition-colors duration-200"
+                                              aria-label={`Assign task to ${activity.activity}`}
+                                            >
+                                              <Link size={14} className="inline-block mr-1" /> Assign
+                                            </button>
+                                          )
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
