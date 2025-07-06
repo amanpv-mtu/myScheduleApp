@@ -1645,7 +1645,7 @@ function App() {
 
     const totalPlannerMinutes = 24 * 60;
     // Use a fixed height for the timeline to ensure consistent spacing
-    const timelineFixedDisplayHeight = 1440; // 1 pixel per minute for 24 hours
+    const timelineFixedDisplayHeight = 2880; // Doubled height for more zoom
     const pixelsPerMinute = timelineFixedDisplayHeight / totalPlannerMinutes;
 
     const topPx = startMinutes * pixelsPerMinute;
@@ -1690,18 +1690,19 @@ function App() {
             ${JSON.stringify(currentScheduleContext)}
 
             Please parse this schedule modification request into a JSON object.
-            Your response MUST be a JSON object with the following structure:
-            {{
+            Your response MUST be a complete and valid JSON object, and ONLY the JSON object. Do not include any conversational text, markdown formatting outside the JSON, or incomplete JSON.
+            The JSON object MUST have the following structure:
+            {
                 "action": "modify_activity" | "shift_activities" | "add_activity" | "delete_activity",
                 "activityName": "string" (Name or part of the activity to target. Try to match closely to existing activity names if modifying/deleting. Use the exact 'id' from the provided current schedule if possible for precise targeting.),
-                "targetDate": "string" (Date for the change, e.g., 'today', 'tomorrow', 'YYYY-MM-DD'. Infer 'today' if no date is given.),
+                "targetDate": "string" (Date for the change, e.g., 'today', 'tomorrow', 'YYYY-MM-DD'. Infer 'today' if no date is given. MUST be YYYY-MM-DD format if a specific date is provided.),
                 "newPlannedStart": "string" (New start time in HH:MM format. REQUIRED for modify_activity and add_activity. If not provided by user, infer based on context or typical duration.),
                 "newPlannedEnd": "string" (New end time in HH:MM format. REQUIRED for modify_activity and add_activity. If not provided by user, infer based on context or typical duration (e.g., 30-60 mins).),
                 "durationChangeMinutes": "number" (Change in duration in minutes, e.g., 15 for +15m, -30 for -30m. Only for modify_activity. If provided, calculate newPlannedEnd from newPlannedStart + durationChangeMinutes.),
                 "shiftMinutes": "number" (Amount to shift activities in minutes, e.g., 30 for +30m, -15 for -15m. Only for shift_activities.),
                 "activityTypeFilter": "string" ("personal" | "academic" | "spiritual" | "physical" | "work" | "project", optional. Filter activities by type for shifts or adding new activities. Infer if adding new activity and type is clear from name.),
-                "activityId": "string" (If you can identify the exact activity from the provided schedule context, include its 'id' here for precise targeting.)
-            }}
+                "activityId": "string" (Optional. The 'id' of the activity from the provided current schedule for precise targeting. Use this if you are confident about the activity.)
+            }
 
             Key instructions for your parsing and suggestions:
             1.  **Contextual Awareness**: Use the provided 'current daily schedule' to understand existing activities, their times, types, and constraint types. Use the 'id' from the context if you are sure about the activity.
@@ -1709,12 +1710,13 @@ function App() {
             3.  **Adjustable/Removable Activities**: If a change to one activity (e.g., extending its duration or shifting its start time) causes an overlap with an 'adjustable' or 'removable' activity, automatically shift or shrink the overlapping 'adjustable'/'removable' activities to accommodate the change, if possible. For 'removable' activities, suggest deleting them if no other adjustment is feasible.
             4.  **Inference for Missing Times/Durations**: For 'modify_activity' or 'add_activity', if \`newPlannedStart\` or \`newPlannedEnd\` are not explicitly provided by the user, you MUST infer them. If only one is given, infer the other based on a typical duration (e.g., 30-60 minutes for a new activity, or maintaining existing duration for modifications). If neither is given for a new activity, suggest a reasonable default like '09:00' to '09:30'.
             5.  **Complete Output**: Ensure all relevant fields in the JSON schema are populated with the best possible suggestion, even if not explicitly mentioned by the user, to make the command executable seamlessly.
+            6.  **Strict JSON**: Your response MUST be a complete and valid JSON object, and ONLY the JSON object. Do not include any conversational text, markdown formatting outside the JSON (e.g., backticks), or incomplete JSON. Do not add comments within the JSON values.
 
             User request: "${userInput}"`
         }]
     });
 
-    const payload1 = {
+    const payload = { // Renamed from payload1
       contents: chatHistory,
       generationConfig: {
         responseMimeType: "application/json",
@@ -1741,7 +1743,7 @@ function App() {
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload1)
+        body: JSON.stringify(payload) // Use the local payload
       });
 
       const result = await response.json();
@@ -1756,8 +1758,17 @@ function App() {
 
       // Check for 'text' property in result.candidates[0].content.parts[0]
       if (result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0 && result.candidates[0].content.parts[0].text) {
-        const jsonString = result.candidates[0].content.parts[0].text;
-        const parsedCommand = JSON.parse(jsonString);
+        let parsedCommand;
+        let jsonString = '';
+        try { // Added try-catch for JSON.parse
+            jsonString = result.candidates[0].content.parts[0].text;
+            parsedCommand = JSON.parse(jsonString);
+        } catch (parseError) {
+            console.error("Error parsing AI response JSON:", parseError, jsonString); // Log the malformed JSON string
+            showToast(`AI response malformed: ${parseError.message}. Please try rephrasing your command.`, "error", 7000);
+            return; // Exit if parsing fails
+        }
+
         console.log("AI Parsed Command:", parsedCommand);
 
         const targetDateObj = parsedCommand.targetDate === 'today' ? currentDate :
@@ -1799,7 +1810,7 @@ function App() {
           if (parsedCommand.action === 'modify_activity') {
             const activityIndex = updatedDayActivities.findIndex(act =>
                 (parsedCommand.activityId && act.id === parsedCommand.activityId) || // Prefer ID if provided by AI
-                act.activity.toLowerCase().includes(parsedCommand.activityName.toLowerCase())
+                (parsedCommand.activityName && act.activity.toLowerCase().includes(parsedCommand.activityName.toLowerCase()))
             );
             if (activityIndex > -1) {
               const originalActivity = { ...updatedDayActivities[activityIndex] };
@@ -1918,7 +1929,7 @@ function App() {
             const initialLength = updatedDayActivities.length;
             updatedDayActivities = updatedDayActivities.filter(act =>
                 (parsedCommand.activityId && act.id === parsedCommand.activityId) || // Prefer ID if provided by AI
-                act.activity.toLowerCase().includes(parsedCommand.activityName.toLowerCase())
+                (parsedCommand.activityName && act.activity.toLowerCase().includes(parsedCommand.activityName.toLowerCase()))
             );
             if (updatedDayActivities.length < initialLength) {
               changesApplied = true;
@@ -1972,7 +1983,7 @@ function App() {
       }]
     });
 
-    const payload2 = {
+    const payload = { // Renamed from payload2
       contents: chatHistory,
       generationConfig: {
         responseMimeType: "application/json",
@@ -1996,7 +2007,7 @@ function App() {
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload2)
+        body: JSON.stringify(payload) // Use the local payload
       });
 
       const result = await response.json();
@@ -2072,7 +2083,7 @@ function App() {
         <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
           {/* Header and Tabs */}
           <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.4</span></h1>
+            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.5</span></h1>
             <div className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('schedule')}
@@ -2268,22 +2279,35 @@ function App() {
               >
                 <h3 className="text-2xl font-bold text-indigo-800 mb-4">Pomodoro Dashboard</h3>
 
-                {/* Main Timer Display */}
+                {/* Main Timer Display - Using SVG for better visualization */}
                 <div className="relative w-48 h-48 mx-auto mb-6 flex items-center justify-center rounded-full bg-white shadow-inner">
+                  <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100">
+                    {/* Background circle */}
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="45"
+                      fill="none"
+                      stroke="#e0e0e0"
+                      strokeWidth="10"
+                    />
+                    {/* Foreground circle (progress indicator) */}
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="45"
+                      fill="none"
+                      stroke={pomodoroTimer.mode === 'work' ? '#4CAF50' : pomodoroTimer.mode === 'short_break' ? '#2196F3' : '#9C27B0'}
+                      strokeWidth="10"
+                      strokeDasharray={2 * Math.PI * 45} // Circumference
+                      strokeDashoffset={2 * Math.PI * 45 * (1 - (pomodoroTimer.timeLeft / Math.max(1, pomodoroTimer.initialTime)))}
+                      transform="rotate(-90 50 50)" // Start from the top
+                      style={{ transition: 'stroke-dashoffset 1s linear' }}
+                    />
+                  </svg>
                   <div className="absolute inset-0 flex items-center justify-center text-6xl font-extrabold text-gray-900">
                     {formatTime(pomodoroTimer.timeLeft)}
                   </div>
-                  <div className="absolute inset-0 rounded-full border-8 border-gray-200"></div>
-                  <div className={`absolute inset-0 rounded-full border-8
-                    ${pomodoroTimer.mode === 'work' ? 'border-green-500' :
-                      pomodoroTimer.mode === 'short_break' ? 'border-blue-500' :
-                      pomodoroTimer.mode === 'long_break' ? 'border-purple-500' : 'border-transparent'
-                    }`}
-                    style={{
-                      // Calculate the percentage of time left relative to the initial time for the current mode
-                      clipPath: `polygon(50% 0%, 50% 50%, ${50 + 50 * Math.sin(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / Math.max(1, pomodoroTimer.initialTime))))}% ${50 - 50 * Math.cos(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / Math.max(1, pomodoroTimer.initialTime))))}%)`
-                    }}
-                  ></div>
                 </div>
 
                 {/* Pomodoro Status and Linked Activity */}
@@ -2428,7 +2452,7 @@ function App() {
                   {/* Visual Planner Timeline for Daily Editor (Now in Schedule Tab) */}
                   <div
                     ref={plannerTimelineRef}
-                    className="relative w-full h-[1440px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200 mb-6"
+                    className="relative w-full h-[2880px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border-4 border-gray-900 mb-6"
                     onDoubleClick={(e) => {
                       // Check if the double-click occurred directly on the timeline (not on an activity block)
                       // This is implicitly handled by stopping propagation in activity blocks.
@@ -2479,20 +2503,34 @@ function App() {
                     {dailyScheduleState.sort((a,b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)).map(activity => {
                         const { top, height } = calculateBlockStyles(activity);
                         const activityNameLower = activity.activity.toLowerCase();
+                        const timeGroup = getTimeOfDayGroup(activity.plannedStart);
+                        const isPrayerBlock = activityNameLower.includes('iqamah & prayer') || activityNameLower.includes('prayer');
 
-                        let bgColor = 'bg-indigo-200';
-                        if (activity.type === 'academic') bgColor = 'bg-blue-200';
-                        if (activity.type === 'spiritual') bgColor = 'bg-green-220'; // Adjusted for better visibility
-                        if (activity.type === 'physical') bgColor = 'bg-red-200';
-                        if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
+                        let bgColor = '';
+                        if (isPrayerBlock) {
+                          bgColor = 'bg-green-50';
+                        } else if (timeGroup === 'night') {
+                          bgColor = 'bg-gray-100';
+                        } else if (timeGroup === 'morning') {
+                          bgColor = 'bg-sky-50';
+                        } else if (timeGroup === 'afternoon') {
+                          bgColor = 'bg-teal-50';
+                        } else if (timeGroup === 'evening') {
+                          bgColor = 'bg-purple-50';
+                        } else {
+                          bgColor = 'bg-white'; // Default fallback
+                        }
+
 
                         return (
                         <div
                             key={activity.id}
                             className={`absolute left-16 right-2 rounded-md p-2 shadow-sm flex flex-col justify-center
                             ${bgColor}
+                            ${activity.id === currentActivityId ? 'border-l-4 border-indigo-600' : 'border-l-2 border-transparent'}
                             ${draggingActivity?.id === activity.id || resizingActivity?.id === activity.id ? 'z-20 border-2 border-indigo-500' : 'z-10'}
                             group // Add group class for hover effects
+                            border border-gray-300 hover:shadow-md transition-shadow duration-150
                             `}
                             style={{ top, height }}
                             onDoubleClick={(e) => { // Double-click to edit
@@ -2517,8 +2555,7 @@ function App() {
                             }}
                             title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
                         >
-                            <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
-                            <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
+                            <span className={`text-sm text-gray-800 truncate whitespace-nowrap overflow-hidden text-ellipsis ${isPrayerBlock ? 'font-bold' : 'font-normal'}`}>{`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}</span>
                             {/* Visual indicators for resize areas (optional, but good for UX) */}
                             <div className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity duration-100"></div>
                             <div className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity duration-100"></div>
@@ -2848,7 +2885,7 @@ function App() {
 
 
               {/* Visual Planner Timeline for Templates */}
-              <div ref={plannerTimelineRef} className="relative w-full h-[1440px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200">
+              <div ref={plannerTimelineRef} className="relative w-full h-[2880px] bg-gray-50 rounded-lg shadow-inner overflow-y-auto border border-gray-200">
               {/* Time Grid Lines and Labels */}
               {[...Array(25)].map((_, hour) => (
                   <React.Fragment key={hour}>
@@ -2875,12 +2912,23 @@ function App() {
               {plannerSchedule[activePlannerDayType] && plannerSchedule[activePlannerDayType].sort((a,b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)).map(activity => {
                   const { top, height } = calculateBlockStyles(activity);
                   const activityNameLower = activity.activity.toLowerCase();
+                  const timeGroup = getTimeOfDayGroup(activity.plannedStart);
+                  const isPrayerBlock = activityNameLower.includes('iqamah & prayer') || activityNameLower.includes('prayer');
 
-                  let bgColor = 'bg-indigo-200';
-                  if (activity.type === 'academic') bgColor = 'bg-blue-200';
-                  if (activity.type === 'spiritual') bgColor = 'bg-green-220';
-                  if (activity.type === 'physical') bgColor = 'bg-red-200';
-                  if (activityNameLower.includes('sleep') || activityNameLower.includes('lights out')) bgColor = 'bg-gray-300';
+                  let bgColor = '';
+                  if (isPrayerBlock) {
+                    bgColor = 'bg-green-50';
+                  } else if (timeGroup === 'night') {
+                    bgColor = 'bg-gray-100';
+                  } else if (timeGroup === 'morning') {
+                    bgColor = 'bg-sky-50';
+                  } else if (timeGroup === 'afternoon') {
+                    bgColor = 'bg-teal-50';
+                  } else if (timeGroup === 'evening') {
+                    bgColor = 'bg-purple-50';
+                  } else {
+                    bgColor = 'bg-white'; // Default fallback
+                  }
 
 
                   return (
@@ -2911,8 +2959,8 @@ function App() {
                       }}
                       title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
                   >
-                      <span className="text-sm font-semibold text-gray-800 truncate">{activity.activity}</span>
-                      <span className="text-xs text-gray-600">{activity.plannedStart} - {activity.plannedEnd}</span>
+                      <span className={`text-sm text-gray-800 truncate whitespace-nowrap overflow-hidden text-ellipsis ${isPrayerBlock ? 'font-bold' : 'font-normal'}`}>{activity.activity}</span>
+                      <span className="text-xs text-gray-600 truncate whitespace-nowrap overflow-hidden text-ellipsis">{activity.plannedStart} - {activity.plannedEnd}</span>
                       {/* Visual indicators for resize areas (optional, but good for UX) */}
                       <div className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity duration-100"></div>
                       <div className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize opacity-0 group-hover:opacity-100 transition-opacity duration-100"></div>
