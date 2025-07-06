@@ -25,7 +25,7 @@ const formatDateTime = (date) => {
 const formatTo24HourTime = (date) => {
   const hours = date.getHours().toString().padStart(2, '0');
   const minutes = date.getMinutes().toString().padStart(2, '0');
-  return `${hours}:${minutes}`;
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 };
 
 const formatDateToYYYYMMDD = (date) => {
@@ -146,7 +146,7 @@ const initialDefaultSchedule = {
   fasting: [
     { id: 'suhoor', activity: 'Suhoor (Pre-dawn meal)', plannedStart: '04:00', plannedEnd: '04:30', type: 'personal', recurrenceType: 'none', constraintType: 'hard' },
     { id: 'fajr-prep-fasting', activity: 'Hydrate, Wudu, Prepare for Fajr', plannedStart: '04:30', plannedEnd: '04:55', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
-    { id: 'fajr-prayer-fasting', activity: 'Fajr Iqamah & Prayer', plannedStart: '04:55', plannedEnd: '05:15', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
+    { id: 'fajr-prayer-fasting', plannedStart: '04:55', plannedEnd: '05:15', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
     { id: 'quran-morning-fasting', activity: 'Quran Recitation & Reflection (Morning)', plannedStart: '05:15', plannedEnd: '05:45', type: 'spiritual', recurrenceType: 'daily', constraintType: 'adjustable' },
     { id: 'light-work-fasting', activity: 'Light Work/Study', plannedStart: '09:00', plannedEnd: '12:00', type: 'academic', recurrenceType: 'daily', constraintType: 'adjustable' },
     { id: 'dhuhr-prayer-fasting', activity: 'Dhuhr Iqamah & Prayer', plannedStart: '13:00', plannedEnd: '13:20', type: 'spiritual', recurrenceType: 'daily', constraintType: 'hard' },
@@ -312,6 +312,13 @@ const ConfirmationModal = ({ message, onConfirm, onCancel }) => {
 
 // --- Activity Reminder Modal Component ---
 const ActivityReminderModal = ({ activity, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onClose();
+    }, 30000); // Auto-close after 30 seconds
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm text-center relative">
@@ -570,8 +577,8 @@ function App() {
   const [aiCommandInput, setAiCommandInput] = useState(''); // State for AI input field
 
   // Toast Notification State and Function
-  const [toast, setToast] = useState(null);
-  const showToast = useCallback((message, type = 'info', duration = 3000) => {
+  const [toast, setToast] = useState(null); // Corrected: useState for toast
+  const showToast = useCallback((message, type = 'info', duration = 3000) => { // Corrected: useCallback wraps the function definition
     setToast({ message, type });
     setTimeout(() => {
       setToast(null);
@@ -665,6 +672,10 @@ function App() {
           setShowReminderModal(true);
           remindersShownToday.current.add(activityKey);
 
+          if (audioEnabled) {
+            audioRef.current.play();
+          }
+
           // Browser Notification
           if (Notification.permission === "granted") {
             new Notification('Upcoming Activity!', {
@@ -687,7 +698,7 @@ function App() {
 
     const reminderInterval = setInterval(checkReminders, 30 * 1000); // Check every 30 seconds
     return () => clearInterval(reminderInterval);
-  }, [dailyScheduleState, currentDate, pomodoroSettings.reminderTime]);
+  }, [dailyScheduleState, currentDate, pomodoroSettings.reminderTime, audioEnabled]);
 
 
   // --- Pomodoro Timer Logic ---
@@ -861,7 +872,7 @@ function App() {
         const firstPomodoroDuration = Math.min(pomodoroSettings.work * 60, totalBlockSeconds);
         startPomodoroSession('work', firstPomodoroDuration / 60, activityId);
       } else {
-        resetPomodoro();
+        resetPomodoro(); // Reset pomodoro if starting a non-academic activity
       }
     } else if (type === 'end') {
         setPomodoroTimer(prev => ({ ...prev, running: false, linkedActivityId: null }));
@@ -1317,7 +1328,7 @@ function App() {
     if (log && log.linkedTaskId) {
       const task = projectTasks.find(t => t.id === log.linkedTaskId);
       if (task) {
-        const subtask = log.linkedSubtaskId ? task.subtasks?.find(st => st.id === log.linkedSubtaskI`d`) : null;
+        const subtask = log.linkedSubtaskId ? task.subtasks?.find(st => st.id === log.linkedSubtaskId) : null;
         return {
           taskName: task.name, subtaskName: subtask ? subtask.name : null,
           taskId: task.id, subtaskId: subtask ? subtask.id : null,
@@ -1633,7 +1644,7 @@ function App() {
 
             Please parse this schedule modification request into a JSON object.
             Your response MUST be a JSON object with the following structure:
-            {
+            {{
                 "action": "modify_activity" | "shift_activities" | "add_activity" | "delete_activity",
                 "activityName": "string" (Name or part of the activity to target),
                 "targetDate": "string" (Date for the change, e.g., 'today', 'tomorrow', 'YYYY-MM-DD'. Infer 'today' if no date is given.),
@@ -1642,7 +1653,7 @@ function App() {
                 "durationChangeMinutes": "number" (Change in duration in minutes, e.g., 15 for +15m, -30 for -30m. Only for modify_activity. If provided, calculate newPlannedEnd from newPlannedStart + durationChangeMinutes.),
                 "shiftMinutes": "number" (Amount to shift activities in minutes, e.g., 30 for +30m, -15 for -15m. Only for shift_activities.),
                 "activityTypeFilter": "string" ("personal" | "academic" | "spiritual" | "physical" | "work" | "project", optional. Filter activities by type for shifts or adding new activities. Infer if adding new activity and type is clear from name.)
-            }
+            }}
 
             Key instructions for your parsing and suggestions:
             1.  **Contextual Awareness**: Use the provided 'current daily schedule' to understand existing activities, their times, types, and constraint types.
@@ -1665,8 +1676,8 @@ function App() {
                     action: { type: "STRING", enum: ["modify_activity", "shift_activities", "add_activity", "delete_activity"] },
                     activityName: { type: "STRING", description: "Name or part of the activity to target" },
                     targetDate: { type: "STRING", description: "Date for the change (e.g., 'today', 'tomorrow', 'YYYY-MM-DD')" },
-                    newPlannedStart: { type: "STRING", description: "New start time in HH:MM format" }, // Made required
-                    newPlannedEnd: { type: "STRING", description: "New end time in HH:MM format" },     // Made required
+                    newPlannedStart: { type: "STRING", description: "New start time in HH:MM format" },
+                    newPlannedEnd: { type: "STRING", description: "New end time in HH:MM format" },
                     durationChangeMinutes: { type: "NUMBER", description: "Change in duration in minutes (e.g., 15 for +15m, -30 for -30m)" },
                     shiftMinutes: { type: "NUMBER", description: "Amount to shift activities in minutes (e.g., 30 for +30m, -15 for -15m)" },
                     activityTypeFilter: { type: "STRING", enum: ["personal", "academic", "spiritual", "physical", "work", "project"], description: "Filter activities by type for shifts (optional)" },
@@ -1877,8 +1888,10 @@ function App() {
         showToast("AI could not understand the command. Please try rephrasing.", "error");
       }
     } catch (error) {
-      console.error("Error calling Gemini API:", error);
-      showToast(`Error communicating with AI: ${error.message}. Please check your API key and try again later.`, "error");
+      console.error("Error calling Gemini API or parsing response:", error);
+      showToast(`Error processing AI command: ${error.message}`, "error", 7000);
+    } finally {
+      setAiCommandInput('');
     }
   }, [currentDate, dailyScheduleState, dailyCustomSchedules, plannerSchedule, fastingDates, iqamahConfig, showToast, appSettings.geminiApiKey]);
 
@@ -2212,7 +2225,7 @@ function App() {
                       pomodoroTimer.mode === 'long_break' ? 'border-purple-500' : 'border-transparent'
                     }`}
                     style={{
-                      clipPath: `polygon(50% 0%, 50% 50%, ${50 + 50 * Math.sin(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / ((pomodoroTimer.mode === 'work' ? pomodoroSettings.work : (pomodoroTimer.mode === 'short_break' ? pomodoroSettings.shortBreak : pomodoroSettings.longBreak)) * 60))))}% ${50 - 50 * Math.cos(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / ((pomodoroTimer.mode === 'work' ? pomodoroSettings.work : (pomodoroTimer.mode === 'short_break' ? pomodoroSettings.shortBreak : pomodoroSettings.longBreak)) * 60))))}%)`
+                      clipPath: `polygon(50% 0%, 50% 50%, ${50 + 50 * Math.sin(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / Math.max(1, ((pomodoroTimer.mode === 'work' ? pomodoroSettings.work : (pomodoroTimer.mode === 'short_break' ? pomodoroSettings.shortBreak : pomodoroSettings.longBreak)) * 60)))))}}% ${50 - 50 * Math.cos(2 * Math.PI * (1 - (pomodoroTimer.timeLeft / Math.max(1, ((pomodoroTimer.mode === 'work' ? pomodoroSettings.work : (pomodoroTimer.mode === 'short_break' ? pomodoroSettings.shortBreak : pomodoroSettings.longBreak)) * 60)))))}}%)`
                     }}
                   ></div>
                 </div>
@@ -2554,7 +2567,7 @@ function App() {
                                       <span className={`block text-xs font-semibold ${statusColor}`}>
                                         {statusIcon} {status}
                                       </span>
-                                      {(isSubdividedBlock || assignedTaskInfo) && (
+                                      {(activity.type === 'academic' || activity.originalActivityId?.includes('flexible-afternoon')) && (
                                         <div className="flex items-center text-xs text-gray-600 mt-1">
                                           <span className="mr-1 text-indigo-500"><Edit size={12} /></span>
                                           {assignedTaskInfo ? (
@@ -3602,6 +3615,13 @@ function App() {
         {pomodoroTimer.showAlert && (
           <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm text-center relative">
+              <button
+                onClick={() => setPomodoroTimer(prev => ({ ...prev, showAlert: false }))}
+                className="absolute top-3 right-3 p-1 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+                aria-label="Close alert"
+              >
+                <X size={20} />
+              </button>
               <BellRing size={48} className="mx-auto text-yellow-500 mb-4 animate-bounce" />
               <h3 className="text-2xl font-bold text-indigo-700 mb-2">Pomodoro Alert!</h3>
               <p className="text-lg text-gray-800 mb-4">
@@ -3936,7 +3956,7 @@ const AssignTaskModal = ({ onClose, projectTasks, dailyScheduleState, currentDat
             <X size={18} className="inline-block mr-1" /> Cancel
           </button>
           <button
-            onClick={() => onAssign(selectedDate, selectedActivityId, selectedTask?.id, selectedSubtask?.id)}
+            onCl            onClick={() => onAssign(selectedDate, selectedActivityId, selectedTask?.id, selectedSubtask?.id)}
             disabled={!selectedTask || !selectedActivityId}
             className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
