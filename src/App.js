@@ -452,7 +452,11 @@ function App() {
   // NEW STATES for GCal Import Date Range
   const [gCalImportStartDate, setGCalImportStartDate] = useState(currentDate);
   const [gCalImportEndDate, setGCalImportEndDate] = useState(currentDate);
-  
+  // NEW STATES for Context Menu
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
+  const [contextMenuActivity, setContextMenuActivity] = useState(null);
+
   const [pomodoroTimer, setPomodoroTimer] = useState({
     running: false,
     mode: 'work',
@@ -2334,6 +2338,53 @@ const handleFetchIqamahTimes = useCallback(async () => {
       setIsExportingGCal(false);
     }
   }, [appSettings.googleCalendarConnected, currentDate, subTaskDetails, showToast]);
+
+  // NEW: Handle Context Menu (Right-Click)
+  const handleContextMenu = useCallback((e, activity) => {
+    e.preventDefault(); // Prevent default browser context menu
+    setShowContextMenu(true);
+    setContextMenuPosition({ x: e.clientX, y: e.clientY });
+    setContextMenuActivity(activity);
+  }, []);
+
+  // NEW: Handle Duplicate Activity
+  const handleDuplicateActivity = useCallback(() => {
+    if (!contextMenuActivity) return;
+
+    const originalActivity = contextMenuActivity;
+    const dateKey = formatDateToYYYYMMDD(currentDate);
+
+    // Calculate new start and end times with a 15-minute offset
+    const originalEndMinutes = timeToMinutes(originalActivity.plannedEnd);
+    const originalStartMinutes = timeToMinutes(originalActivity.plannedStart);
+    const durationMinutes = (originalEndMinutes < originalStartMinutes ? originalEndMinutes + 1440 : originalEndMinutes) - originalStartMinutes;
+
+    const newStartMinutes = (originalEndMinutes + 15) % 1440; // 15 minutes after original end
+    let newEndMinutes = (newStartMinutes + durationMinutes);
+    if (newEndMinutes >= 1440) newEndMinutes -= 1440; // Handle overnight wrap-around for end time
+
+    const newActivity = {
+      ...originalActivity,
+      id: crypto.randomUUID(), // Ensure a new unique ID
+      activity: `${originalActivity.activity} (Copy)`, // Append "(Copy)" to the name
+      plannedStart: minutesToTime(newStartMinutes),
+      plannedEnd: minutesToTime(newEndMinutes),
+      isNew: true, // Mark as new for potential future handling if needed
+    };
+
+    setDailyCustomSchedules(prev => {
+      const currentDaySchedule = prev[dateKey] ? [...prev[dateKey]] :
+                                 generateScheduleForDate(currentDate, null, true, plannerSchedule, prev, fastingDates, iqamahConfig);
+      const updatedSchedule = [...currentDaySchedule, newActivity];
+      updatedSchedule.sort((a, b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart)); // Re-sort
+      return { ...prev, [dateKey]: updatedSchedule };
+    });
+
+    showToast(`Activity "${newActivity.activity}" duplicated!`, 'success');
+    setShowContextMenu(false); // Close context menu
+    setContextMenuActivity(null);
+  }, [contextMenuActivity, currentDate, setDailyCustomSchedules, showToast, plannerSchedule, fastingDates, iqamahConfig]);
+
 // Handle Reconnect Google Calendar
   const handleReconnectGoogleCalendar = useCallback(() => {
     setIsConnectingGCal(true);
@@ -2438,7 +2489,7 @@ const handleFetchIqamahTimes = useCallback(async () => {
         <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
           {/* Header and Tabs */}
           <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.13</span></h1>
+            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.14</span></h1>
             <div className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('schedule')}
@@ -2948,6 +2999,7 @@ const handleFetchIqamahTimes = useCallback(async () => {
                                     handleMouseDown(e, activity.id, 'move'); // Moving the block
                                 }
                             }}
+                            onContextMenu={(e) => handleContextMenu(e, activity)}
                             title={`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}
                         >
                             <span className={`text-sm text-gray-800 truncate whitespace-nowrap overflow-hidden text-ellipsis ${isPrayerBlock ? 'font-bold' : 'font-normal'}`}>{`${activity.activity} (${activity.plannedStart} - ${activity.plannedEnd})`}</span>
@@ -3052,6 +3104,7 @@ const handleFetchIqamahTimes = useCallback(async () => {
                                         )
                                       }
                                     `}
+                                    onContextMenu={(e) => handleContextMenu(e, activity)}
                                   >
                                     <td className="py-3 px-4 text-sm font-medium text-gray-700">
                                       <span className={`${isPrayerBlock ? 'font-bold' : ''}`}>
@@ -4346,6 +4399,22 @@ const handleFetchIqamahTimes = useCallback(async () => {
             type={toast.type}
             onClose={() => setToast(null)}
           />
+        )}
+        {/* NEW: Context Menu */}
+        {showContextMenu && contextMenuActivity && (
+          <div
+            className="fixed z-50 bg-white rounded-md shadow-lg py-1 border border-gray-200"
+            style={{ top: contextMenuPosition.y, left: contextMenuPosition.x }}
+            onMouseLeave={() => setShowContextMenu(false)} // Close if mouse leaves the menu
+          >
+            <button
+              onClick={handleDuplicateActivity}
+              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            >
+              Duplicate Activity
+            </button>
+            {/* Add more context menu options here if needed later */}
+          </div>
         )}
       </div>
     </ErrorBoundary>
