@@ -449,9 +449,26 @@ function App() {
   const [isImportingGCal, setIsImportingGCal] = useState(false);
   const [isExportingGCal, setIsExportingGCal] = useState(false);
 
-  // NEW STATES for GCal Import Date Range
-  const [gCalImportStartDate, setGCalImportStartDate] = useState(currentDate);
-  const [gCalImportEndDate, setGCalImportEndDate] = useState(currentDate);
+// NEW STATES for GCal Import Date Range - Try loading from localStorage first
+  const [gCalImportStartDate, setGCalImportStartDate] = useState(() => {
+    try {
+      const savedDate = localStorage.getItem('gCalImportStartDate');
+      return savedDate ? new Date(savedDate) : currentDate;
+    } catch (error) {
+      console.error("Failed to parse gCalImportStartDate from localStorage:", error);
+      return currentDate;
+    }
+  });
+  const [gCalImportEndDate, setGCalImportEndDate] = useState(() => {
+    try {
+      const savedDate = localStorage.getItem('gCalImportEndDate');
+      return savedDate ? new Date(savedDate) : currentDate;
+    } catch (error) {
+      console.error("Failed to parse gCalImportEndDate from localStorage:", error);
+      return currentDate;
+    }
+  });
+
   // NEW STATES for Context Menu
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
@@ -653,7 +670,17 @@ function App() {
   useEffect(() => { localStorage.setItem('fastingDates', JSON.stringify(fastingDates)); }, [fastingDates]);
   useEffect(() => { localStorage.setItem('dailyCustomSchedules', JSON.stringify(dailyCustomSchedules)); }, [dailyCustomSchedules]);
   useEffect(() => { localStorage.setItem('iqamahConfig', JSON.stringify(iqamahConfig)); }, [iqamahConfig]);
-
+  // NEW: Save GCal Import Dates to Local Storage
+  useEffect(() => {
+    if (gCalImportStartDate) {
+      localStorage.setItem('gCalImportStartDate', gCalImportStartDate.toISOString());
+    }
+  }, [gCalImportStartDate]);
+  useEffect(() => {
+    if (gCalImportEndDate) {
+      localStorage.setItem('gCalImportEndDate', gCalImportEndDate.toISOString());
+    }
+  }, [gCalImportEndDate]);
 
   // Reset remindersShownToday when currentDate changes
   useEffect(() => { remindersShownToday.current = new Set(); }, [currentDate]);
@@ -2489,7 +2516,7 @@ const handleFetchIqamahTimes = useCallback(async () => {
         <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
           {/* Header and Tabs */}
           <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.14</span></h1>
+            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.16</span></h1>
             <div className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('schedule')}
@@ -2562,9 +2589,22 @@ const handleFetchIqamahTimes = useCallback(async () => {
                   <input
                     type="date"
                     id="gCalImportStartDate"
-                    value={formatDateToYYYYMMDD(gCalImportStartDate)}
-                    onChange={(e) => setGCalImportStartDate(new Date(e.target.value))}
+                    // Ensure formatDateToYYYYMMDD is correctly converting the Date object to "YYYY-MM-DD" string
+                    // Provide empty string if gCalImportStartDate is null
+                    value={gCalImportStartDate ? formatDateToYYYYMMDD(gCalImportStartDate) : ''}
+                    onChange={(e) => {
+                    // Fix: Construct date in local timezone to avoid UTC conversion issues
+                      const dateString = e.target.value;
+                      if (dateString) {
+                        const [year, month, day] = dateString.split('-').map(Number);
+                        // Construct date using local year, month (0-indexed), day
+                        setGCalImportStartDate(new Date(year, month - 1, day));
+                      } else {
+                        setGCalImportStartDate(null);
+                      }
+                    }}
                     className="p-2 border border-gray-300 rounded-md w-full"
+                    key={`gcal-start-date-${gCalImportStartDate ? formatDateToYYYYMMDD(gCalImportStartDate) : 'null'}`}
                   />
                 </div>
                 <div className="flex-grow"> {/* Allows date pickers to take available space */}
@@ -2572,9 +2612,22 @@ const handleFetchIqamahTimes = useCallback(async () => {
                   <input
                     type="date"
                     id="gCalImportEndDate"
-                    value={formatDateToYYYYMMDD(gCalImportEndDate)}
-                    onChange={(e) => setGCalImportEndDate(new Date(e.target.value))}
+                    // Ensure formatDateToYYYYMMDD is correctly converting the Date object to "YYYY-MM-DD" string
+                    // Provide empty string if gCalImportEndDate is null
+                    value={gCalImportEndDate ? formatDateToYYYYMMDD(gCalImportEndDate) : ''}
+                    onChange={(e) => {
+                    // Fix: Construct date in local timezone to avoid UTC conversion issues
+                      const dateString = e.target.value;
+                      if (dateString) {
+                        const [year, month, day] = dateString.split('-').map(Number);
+                        // Construct date using local year, month (0-indexed), day
+                        setGCalImportEndDate(new Date(year, month - 1, day));
+                      } else {
+                        setGCalImportEndDate(null);
+                      }
+                    }}
                     className="p-2 border border-gray-300 rounded-md w-full"
+                    key={`gcal-end-date-${gCalImportEndDate ? formatDateToYYYYMMDD(gCalImportEndDate) : 'null'}`}
                   />
                 </div>
                 {/* Import Google Calendar Meetings Button - now part of the flex container */}
