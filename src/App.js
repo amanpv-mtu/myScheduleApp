@@ -411,10 +411,135 @@ class ErrorBoundary extends React.Component {
     return this.props.children;
   }
 }
+// --- AI Suggestion Review Modal Component ---
+const AISuggestionReviewModal = ({ suggestions, onApply, onCancel }) => {
+  const [editableSuggestions, setEditableSuggestions] = useState(suggestions);
 
+  const handleInputChange = (index, field, value) => {
+    setEditableSuggestions(prev => {
+      const newSuggestions = [...prev];
+      newSuggestions[index] = { ...newSuggestions[index], [field]: value };
+      return newSuggestions;
+    });
+  };
+
+  const handleDeleteSuggestion = (index) => {
+    setEditableSuggestions(prev => prev.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-3xl relative">
+        <h3 className="text-2xl font-bold text-indigo-700 mb-4">Review AI Suggestions</h3>
+        <p className="text-sm text-gray-700 mb-4">
+          The AI has suggested the following changes to your schedule. You can modify or remove suggestions before applying.
+        </p>
+
+        {editableSuggestions.length === 0 ? (
+          <p className="text-center text-gray-500 py-8">No suggestions to review.</p>
+        ) : (
+          <div className="overflow-x-auto mb-6 border border-gray-200 rounded-md">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Activity Name</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start Time</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">End Time</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Original ID (if modify/delete)</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th> {/* For delete button */}
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {editableSuggestions.map((sug, index) => (
+                  <tr key={index}>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+                        ${sug.action === 'add_activity' ? 'bg-green-100 text-green-800' :
+                           sug.action === 'modify_activity' ? 'bg-blue-100 text-blue-800' :
+                           sug.action === 'delete_activity' ? 'bg-red-100 text-red-800' :
+                           sug.action === 'shift_activities' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'}
+                      `}>
+                        {sug.action.replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                      <input
+                        type="text"
+                        value={sug.activityName || ''}
+                        onChange={(e) => handleInputChange(index, 'activityName', e.target.value)}
+                        className="w-full border-b border-gray-300 focus:border-indigo-500 outline-none"
+                        disabled={sug.action === 'delete_activity' || sug.action === 'shift_activities'}
+                      />
+                    </td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                      <input
+                        type="time"
+                        value={sug.newPlannedStart || ''}
+                        onChange={(e) => handleInputChange(index, 'newPlannedStart', e.target.value)}
+                        className="w-24 border-b border-gray-300 focus:border-indigo-500 outline-none"
+                        disabled={sug.action === 'delete_activity'}
+                      />
+                    </td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                      <input
+                        type="time"
+                        value={sug.newPlannedEnd || ''}
+                        onChange={(e) => handleInputChange(index, 'newPlannedEnd', e.target.value)}
+                        className="w-24 border-b border-gray-300 focus:border-indigo-500 outline-none"
+                        disabled={sug.action === 'delete_activity'}
+                      />
+                    </td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="text"
+                        value={sug.originalActivityId || ''}
+                        onChange={(e) => handleInputChange(index, 'originalActivityId', e.target.value)}
+                        className="w-full border-b border-gray-300 focus:border-indigo-500 outline-none text-xs"
+                        disabled={sug.action === 'add_activity'}
+                      />
+                    </td>
+                    <td className="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">
+                      <button
+                        onClick={() => handleDeleteSuggestion(index)}
+                        className="text-red-600 hover:text-red-900"
+                        aria-label="Delete suggestion"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="flex justify-end space-x-4">
+          <button
+            onClick={onCancel}
+            className="px-6 py-2 bg-gray-200 text-gray-800 rounded-md shadow-md hover:bg-gray-300 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onApply(editableSuggestions)}
+            className="px-6 py-2 bg-indigo-600 text-white rounded-md shadow-md hover:bg-indigo-700 transition-colors"
+            disabled={editableSuggestions.length === 0}
+          >
+            Apply Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 function App() {
   const appName = "My Daily Rhythm"; // Define the app name here
-  
+    // NEW STATES for AI Suggestion Review
+  const [aiSuggestedChanges, setAiSuggestedChanges] = useState([]);
+  const [showAISuggestionModal, setShowAISuggestionModal] = useState(false);
+
   const [currentDate, setCurrentDate] = useState(new Date());
   const [activityLogs, setActivityLogs] = useState(() => {
     try {
@@ -1716,78 +1841,111 @@ function App() {
   }, [currentDate, plannerSchedule, dailyCustomSchedules, fastingDates, iqamahConfig]);
 
   // --- AI Schedule Refinement Function (Integrated) ---
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const refineScheduleWithAI = useCallback(async (userInput) => {
-    if (!userInput.trim()) {
-        showToast("Please enter a command for the AI assistant.", "error");
-        return;
-    }
     if (!appSettings.geminiApiKey) {
-        showToast("Please enter your Gemini API Key in Settings to use the AI assistant.", "error", 5000);
-        return;
+      showToast("Please enter your Gemini API Key in Settings to use AI features.", "error", 5000);
+      return;
     }
 
-    showToast("Processing AI command...", "info", 5000);
+    showToast("AI is refining your schedule...", "info", 5000);
 
-    // Provide the current daily schedule to the AI for better context
-    const currentScheduleContext = dailyScheduleState.map(activity => ({
-        id: activity.id, // Include ID for AI to potentially reference
-        activity: activity.activity,
-        plannedStart: activity.plannedStart,
-        plannedEnd: activity.plannedEnd,
-        type: activity.type,
-        constraintType: activity.constraintType,
-    }));
+    const currentDaySchedule = dailyCustomSchedules[formatDateToYYYYMMDD(currentDate)] ||
+                               generateScheduleForDate(currentDate, null, true, plannerSchedule, dailyCustomSchedules, fastingDates, iqamahConfig);
+
+    const scheduleDescription = currentDaySchedule.map(activity =>
+      `ID: ${activity.id}, Activity: "${activity.activity}", Start: ${activity.plannedStart}, End: ${activity.plannedEnd}, Type: ${activity.type}, Constraint: ${activity.constraintType}`
+    ).join('\n');
+
+    const prompt = `You are an AI assistant for a daily rhythm planning app. Your task is to refine a user's daily schedule based on their input.
+    The current date is ${currentDate.toLocaleDateString()}.
+    Here is the current daily schedule:
+    ${scheduleDescription}
+
+    The user's request for refinement is: "${userInput}"
+
+    Suggest one or more actions to modify the schedule based on the user's request.
+    Each action must be one of the following types:
+    - "add_activity": To add a new activity.
+    - "modify_activity": To change an existing activity's name or times.
+    - "delete_activity": To remove an existing activity.
+    - "shift_activities": To shift a block of activities by a certain duration.
+
+    Provide the response in a JSON array format. Each object in the array must strictly adhere to the following schema based on the action type:
+
+    For "add_activity":
+    {
+      "action": "add_activity",
+      "activityName": "New Activity Name",
+      "newPlannedStart": "HH:MM",
+      "newPlannedEnd": "HH:MM",
+      "type": "personal" | "academic" | "physical" | "spiritual" | "work",
+      "constraintType": "hard" | "adjustable"
+    }
+
+    For "modify_activity":
+    {
+      "action": "modify_activity",
+      "originalActivityId": "ID of activity to modify",
+      "activityName": "Updated Activity Name (optional, keep original if not changing)",
+      "newPlannedStart": "HH:MM (optional, keep original if not changing)",
+      "newPlannedEnd": "HH:MM (optional, keep original if not changing)"
+    }
+
+    For "delete_activity":
+    {
+      "action": "delete_activity",
+      "originalActivityId": "ID of activity to delete"
+    }
+
+    For "shift_activities":
+    {
+      "action": "shift_activities",
+      "startActivityId": "ID of the first activity in the block to shift",
+      "endActivityId": "ID of the last activity in the block to shift",
+      "shiftDurationMinutes": "Number of minutes to shift (positive for later, negative for earlier)"
+    }
+
+    Ensure all times are in HH:MM (24-hour) format.
+    If an activity is being modified or deleted, its 'originalActivityId' MUST match an existing ID from the provided schedule.
+    If shifting, 'startActivityId' and 'endActivityId' MUST match existing IDs.
+    Consider activity constraints: 'hard' constraint activities should generally not be moved or resized unless explicitly requested by the user. 'adjustable' activities are flexible.
+    Do not suggest overlapping activities unless explicitly requested and justified.
+    Prioritize user's explicit requests. If a request is impossible or unclear, state so in a comment (not in the JSON).
+    If no meaningful changes can be suggested, return an empty array.
+    `;
 
     const chatHistory = [];
-    chatHistory.push({
-        role: "user",
-        parts: [{
-            text: `Given the current daily schedule (today is ${formatDateToYYYYMMDD(currentDate)}):
-            ${JSON.stringify(currentScheduleContext)}
+    chatHistory.push({ role: "user", parts: [{ text: prompt }] });
 
-            Please parse this schedule modification request into a JSON object.
-            Your response MUST be a complete and valid JSON object, and ONLY the JSON object. Do not include any conversational text, markdown formatting outside the JSON, or incomplete JSON.
-            The JSON object MUST have the following structure:
-            {
-                "action": "modify_activity" | "shift_activities" | "add_activity" | "delete_activity",
-                "activityName": "string" (Name or part of the activity to target. Try to match closely to existing activity names if modifying/deleting. Use the exact 'id' from the provided current schedule if possible for precise targeting.),
-                "targetDate": "string" (Date for the change, e.g., 'today', 'tomorrow', 'YYYY-MM-DD'. Infer 'today' if no date is given. MUST be YYYY-MM-DD format if a specific date is provided.),
-                "newPlannedStart": "string" (New start time in HH:MM format. REQUIRED for modify_activity and add_activity. If not provided by user, infer based on context or typical duration.),
-                "newPlannedEnd": "string" (New end time in HH:MM format. REQUIRED for modify_activity and add_activity. If not provided by user, infer based on context or typical duration (e.g., 30-60 mins).),
-                "durationChangeMinutes": "number" (Change in duration in minutes, e.g., 15 for +15m, -30 for -30m. Only for modify_activity. If provided, calculate newPlannedEnd from newPlannedStart + durationChangeMinutes.),
-                "shiftMinutes": "number" (Amount to shift activities in minutes, e.g., 30 for +30m, -15 for -15m. Only for shift_activities.),
-                "activityTypeFilter": "string" ("personal" | "academic" | "spiritual" | "physical" | "work" | "project", optional. Filter activities by type for shifts or adding new activities. Infer if adding new activity and type is clear from name.),
-                "activityId": "string" (Optional. The 'id' of the activity from the provided current schedule for precise targeting. Use this if you are confident about the activity.)
-            }
-
-            Key instructions for your parsing and suggestions:
-            1.  **Contextual Awareness**: Use the provided 'current daily schedule' to understand existing activities, their times, types, and constraint types. Use the 'id' from the context if you are sure about the activity.
-            2.  **Hard Constraints**: Activities with "constraintType": "hard" are IMMOVABLE. If a requested change conflicts with a hard constraint, suggest an alternative that avoids the conflict or state that the change cannot be made without violating a hard constraint.
-            3.  **Adjustable/Removable Activities**: If a change to one activity (e.g., extending its duration or shifting its start time) causes an overlap with an 'adjustable' or 'removable' activity, automatically shift or shrink the overlapping 'adjustable'/'removable' activities to accommodate the change, if possible. For 'removable' activities, suggest deleting them if no other adjustment is feasible.
-            4.  **Inference for Missing Times/Durations**: For 'modify_activity' or 'add_activity', if \`newPlannedStart\` or \`newPlannedEnd\` are not explicitly provided by the user, you MUST infer them. If only one is given, infer the other based on a typical duration (e.g., 30-60 minutes for a new activity, or maintaining existing duration for modifications). If neither is given for a new activity, suggest a reasonable default like '09:00' to '09:30'.
-            5.  **Complete Output**: Ensure all relevant fields in the JSON schema are populated with the best possible suggestion, even if not explicitly mentioned by the user, to make the command executable seamlessly.
-            6.  **Strict JSON**: Your response MUST be a complete and valid JSON object, and ONLY the JSON object. Do not include any conversational text, markdown formatting outside the JSON (e.g., backticks), or incomplete JSON. Do not add comments within the JSON values.
-
-            User request: "${userInput}"`
-        }]
-    });
-
-    const payload = { // Renamed from payload1
+    const payload = {
       contents: chatHistory,
       generationConfig: {
         responseMimeType: "application/json",
+        maxOutputTokens: 2048, // NEW: Increased token limit to allow for longer JSON responses
         responseSchema: {
-          type: "OBJECT",
-          properties: {
-            action: { type: "STRING" },
-            activityName: { type: "STRING" },
-            targetDate: { type: "STRING" },
-            newPlannedStart: { type: "STRING" },
-            newPlannedEnd: { type: "STRING" },
-            durationChangeMinutes: { type: "NUMBER" },
-            shiftMinutes: { type: "NUMBER" },
-            activityTypeFilter: { type: "STRING" },
-            activityId: { type: "STRING" } // Added activityId to schema for precise targeting
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: {
+              action: { type: "STRING", enum: ["add_activity", "modify_activity", "delete_activity", "shift_activities"] },
+              activityName: { type: "STRING", nullable: true },
+              newPlannedStart: { type: "STRING", pattern: "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", nullable: true },
+              newPlannedEnd: { type: "STRING", pattern: "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", nullable: true },
+              originalActivityId: { type: "STRING", nullable: true },
+              type: { type: "STRING", enum: ["personal", "academic", "physical", "spiritual", "work"], nullable: true },
+              constraintType: { type: "STRING", enum: ["hard", "adjustable"], nullable: true },
+              startActivityId: { type: "STRING", nullable: true },
+              endActivityId: { type: "STRING", nullable: true },
+              shiftDurationMinutes: { type: "NUMBER", nullable: true }
+            },
+            // Define required fields based on action type
+            oneOf: [
+              { properties: { action: { enum: ["add_activity"] }, activityName: {}, newPlannedStart: {}, newPlannedEnd: {}, type: {}, constraintType: {} }, required: ["action", "activityName", "newPlannedStart", "newPlannedEnd", "type", "constraintType"] },
+              { properties: { action: { enum: ["modify_activity"] }, originalActivityId: {} }, required: ["action", "originalActivityId"] },
+              { properties: { action: { enum: ["delete_activity"] }, originalActivityId: {} }, required: ["action", "originalActivityId"] },
+              { properties: { action: { enum: ["shift_activities"] }, startActivityId: {}, endActivityId: {}, shiftDurationMinutes: {} }, required: ["action", "startActivityId", "endActivityId", "shiftDurationMinutes"] }
+            ]
           }
         }
       }
@@ -1799,7 +1957,7 @@ function App() {
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload) // Use the local payload
+        body: JSON.stringify(payload)
       });
 
       const result = await response.json();
@@ -1812,210 +1970,33 @@ function App() {
         throw new Error(errorMessage);
       }
 
-      // Check for 'text' property in result.candidates[0].content.parts[0]
       if (result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0 && result.candidates[0].content.parts[0].text) {
-        let parsedCommand;
-        let jsonString = '';
-        try { // Added try-catch for JSON.parse
-            jsonString = result.candidates[0].content.parts[0].text;
-            parsedCommand = JSON.parse(jsonString);
-        } catch (parseError) {
-            console.error("Error parsing AI response JSON:", parseError, jsonString); // Log the malformed JSON string
-            showToast(`AI response malformed: ${parseError.message}. Please try rephrasing your command.`, "error", 7000);
-            return; // Exit if parsing fails
-        }
+        const jsonString = result.candidates[0].content.parts[0].text;
+        console.log("Raw AI response JSON string:", jsonString); // Log the raw string for debugging
 
-        console.log("AI Parsed Command:", parsedCommand);
+        try {
+          const parsedSuggestions = JSON.parse(jsonString);
 
-        const targetDateObj = parsedCommand.targetDate === 'today' ? currentDate :
-                              parsedCommand.targetDate === 'tomorrow' ? new Date(currentDate.getTime() + 24 * 60 * 60 * 1000) :
-                              parsedCommand.targetDate ? new Date(parsedCommand.targetDate) : currentDate;
-        const dateKey = formatDateToYYYYMMDD(targetDateObj);
-
-        setDailyCustomSchedules(prevDailySchedules => {
-          // Ensure we are working on a mutable copy of the current day's schedule
-          let currentDayActivities = prevDailySchedules[dateKey] ? [...prevDailySchedules[dateKey]] :
-                                       generateScheduleForDate(targetDateObj, null, true, plannerSchedule, prevDailySchedules, fastingDates, iqamahConfig);
-          let updatedDayActivities = [...currentDayActivities];
-          let changesApplied = false;
-          let conflictDetected = false;
-
-          const checkOverlap = (activityToCheck, currentActivities) => {
-            const start1 = timeToMinutes(activityToCheck.plannedStart);
-            let end1 = timeToMinutes(activityToCheck.plannedEnd);
-            if (end1 < start1) end1 += 1440;
-
-            for (const existingActivity of currentActivities) {
-              if (existingActivity.id === activityToCheck.id) continue; // Don't check against itself
-
-              const start2 = timeToMinutes(existingActivity.plannedStart);
-              let end2 = timeToMinutes(existingActivity.plannedEnd);
-              if (end2 < start2) end2 += 1440;
-
-              // Check for overlap
-              if (Math.max(start1, start2) < Math.min(end1, end2)) {
-                if (existingActivity.constraintType === 'hard' || activityToCheck.constraintType === 'hard') {
-                  return true; // Conflict with a hard constraint
-                }
-              }
-            }
-            return false;
-          };
-
-
-          if (parsedCommand.action === 'modify_activity') {
-            const activityIndex = updatedDayActivities.findIndex(act =>
-                (parsedCommand.activityId && act.id === parsedCommand.activityId) || // Prefer ID if provided by AI
-                (parsedCommand.activityName && act.activity.toLowerCase().includes(parsedCommand.activityName.toLowerCase()))
-            );
-            if (activityIndex > -1) {
-              const originalActivity = { ...updatedDayActivities[activityIndex] };
-              let newStart = parsedCommand.newPlannedStart || originalActivity.plannedStart;
-              let newEnd = parsedCommand.newPlannedEnd || originalActivity.plannedEnd;
-
-              if (parsedCommand.durationChangeMinutes !== undefined) {
-                const currentStartMinutes = timeToMinutes(newStart);
-                let newEndMinutes = currentStartMinutes + parsedCommand.durationChangeMinutes;
-                newEnd = minutesToTime(newEndMinutes);
-              }
-
-              const potentialActivity = { ...originalActivity, plannedStart: newStart, plannedEnd: newEnd };
-
-              if (checkOverlap(potentialActivity, updatedDayActivities.filter((_, idx) => idx !== activityIndex))) {
-                showToast(`Conflict detected: Cannot modify "${originalActivity.activity}" due to overlap with a hard constraint activity.`, 'error', 5000);
-                conflictDetected = true;
-              } else {
-                updatedDayActivities[activityIndex] = potentialActivity;
-                changesApplied = true;
-                showToast(`Activity "${originalActivity.activity}" modified.`, 'success');
-              }
-            } else {
-              showToast(`Activity "${parsedCommand.activityName}" not found for modification.`, 'error');
-            }
-          } else if (parsedCommand.action === 'shift_activities') {
-            const shiftMinutes = parsedCommand.shiftMinutes || 0;
-            if (shiftMinutes === 0) {
-                showToast("No shift amount specified.", "error");
-                return prevDailySchedules;
-            }
-            const activitiesToShift = updatedDayActivities.filter(act =>
-              (!parsedCommand.activityTypeFilter || act.type === parsedCommand.activityTypeFilter) &&
-              act.constraintType !== 'hard' // Don't shift hard constraint activities
-            );
-
-            let allShiftsPossible = true;
-            let tempUpdatedActivities = JSON.parse(JSON.stringify(updatedDayActivities)); // Work on a deep copy for pre-check
-
-            for (const activity of activitiesToShift) {
-                const originalStartMinutes = timeToMinutes(activity.plannedStart);
-                let originalEndMinutes = timeToMinutes(activity.plannedEnd);
-                if (originalEndMinutes < originalStartMinutes) originalEndMinutes += 1440;
-
-                let newStartMinutes = originalStartMinutes + shiftMinutes;
-                let newEndMinutes = originalEndMinutes + shiftMinutes;
-
-                // Handle wrap around for new times
-                if (newStartMinutes < 0) { newStartMinutes += 1440; newEndMinutes += 1440; }
-                else if (newStartMinutes >= 1440) { newStartMinutes -= 1440; newEndMinutes -= 1440; }
-
-                const potentialActivity = { ...activity, plannedStart: minutesToTime(newStartMinutes), plannedEnd: minutesToTime(newEndMinutes) };
-
-                // Temporarily update the activity in tempUpdatedActivities for collision check
-                const tempIndex = tempUpdatedActivities.findIndex(a => a.id === activity.id);
-                if (tempIndex > -1) {
-                    const originalTemp = tempUpdatedActivities[tempIndex];
-                    tempUpdatedActivities[tempIndex] = potentialActivity;
-                    if (checkOverlap(potentialActivity, tempUpdatedActivities.filter(a => a.id !== activity.id))) {
-                        showToast(`Conflict detected: Cannot shift "${activity.activity}" due to overlap with a hard constraint activity. Skipping all shifts.`, 'error', 5000);
-                        allShiftsPossible = false;
-                        break; // Stop if any conflict is found
-                    }
-                    tempUpdatedActivities[tempIndex] = originalTemp; // Revert for next check
-                }
-            }
-
-            if (allShiftsPossible) {
-                updatedDayActivities = updatedDayActivities.map(activity => {
-                    if ((!parsedCommand.activityTypeFilter || activity.type === parsedCommand.activityTypeFilter) && activity.constraintType !== 'hard') {
-                        const originalStartMinutes = timeToMinutes(activity.plannedStart);
-                        let originalEndMinutes = timeToMinutes(activity.plannedEnd);
-                        if (originalEndMinutes < originalStartMinutes) originalEndMinutes += 1440;
-
-                        let newStartMinutes = originalStartMinutes + shiftMinutes;
-                        let newEndMinutes = originalEndMinutes + shiftMinutes;
-
-                        if (newStartMinutes < 0) { newStartMinutes += 1440; newEndMinutes += 1440; }
-                        else if (newStartMinutes >= 1440) { newStartMinutes -= 1440; newEndMinutes -= 1440; }
-
-                        changesApplied = true;
-                        return { ...activity, plannedStart: minutesToTime(newStartMinutes), plannedEnd: minutesToTime(newEndMinutes) };
-                    }
-                    return activity;
-                });
-                if (changesApplied) {
-                    showToast(`Activities shifted by ${shiftMinutes} minutes.`, 'success');
-                } else {
-                    showToast("No adjustable activities found to shift, or no shift applied.", "info");
-                }
-            } else {
-                conflictDetected = true;
-            }
-
-          } else if (parsedCommand.action === 'add_activity') {
-            const newActivity = {
-              id: crypto.randomUUID(),
-              activity: parsedCommand.activityName || 'New Activity',
-              plannedStart: parsedCommand.newPlannedStart || '09:00', // Should be inferred by AI
-              plannedEnd: parsedCommand.newPlannedEnd || '10:00',   // Should be inferred by AI
-              type: parsedCommand.activityTypeFilter || 'personal',
-              recurrenceType: 'none', // AI adds to daily, so no recurrence
-              recurrenceDays: [],
-              constraintType: 'adjustable', // Default for AI added
-            };
-
-            if (checkOverlap(newActivity, updatedDayActivities)) {
-              showToast(`Conflict detected: Cannot add "${newActivity.activity}" due to overlap with a hard constraint activity.`, 'error', 5000);
-              conflictDetected = true;
-            } else {
-              updatedDayActivities.push(newActivity);
-              changesApplied = true;
-              showToast(`Activity "${newActivity.activity}" added.`, 'success');
-            }
-          } else if (parsedCommand.action === 'delete_activity') {
-            const initialLength = updatedDayActivities.length;
-            updatedDayActivities = updatedDayActivities.filter(act =>
-                (parsedCommand.activityId && act.id === parsedCommand.activityId) || // Prefer ID if provided by AI
-                (parsedCommand.activityName && act.activity.toLowerCase().includes(parsedCommand.activityName.toLowerCase()))
-            );
-            if (updatedDayActivities.length < initialLength) {
-              changesApplied = true;
-              showToast(`Activity "${parsedCommand.activityName}" deleted.`, 'success');
-            } else {
-              showToast(`Activity "${parsedCommand.activityName}" not found for deletion.`, 'error');
-            }
+          if (Array.isArray(parsedSuggestions) && parsedSuggestions.length > 0) {
+            setAiSuggestedChanges(parsedSuggestions);
+            setShowAISuggestionModal(true); // Open modal for review
+            showToast("AI suggestions received. Please review.", "info", 5000);
           } else {
-            showToast("AI command not recognized or supported.", "error");
+            showToast("AI did not suggest any changes or the response was empty.", "info", 5000);
           }
-
-          if (changesApplied && !conflictDetected) {
-            // Sort after changes to maintain order
-            updatedDayActivities.sort((a, b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart));
-            return { ...prevDailySchedules, [dateKey]: updatedDayActivities };
-          }
-          return prevDailySchedules; // No changes applied or conflict
-        });
-
+        } catch (parseError) {
+          console.error("Error parsing AI response JSON:", parseError);
+          showToast(`Failed to parse AI response: ${parseError.message}. Please try again.`, "error", 7000);
+        }
       } else {
-        console.error("AI response structure unexpected:", result);
-        showToast("AI could not understand the command. Please try rephrasing.", "error");
+        console.error("AI response structure unexpected for schedule refinement:", result);
+        showToast("AI could not refine schedule. Please try again.", "error");
       }
     } catch (error) {
-      console.error("Error calling Gemini API or parsing response:", error);
-      showToast(`Error processing AI command: ${error.message}`, "error", 7000);
-    } finally {
-      setAiCommandInput('');
+      console.error("Error calling Gemini API for schedule refinement:", error);
+      showToast(`Failed to refine schedule via AI: ${error.message}.`, "error");
     }
-  }, [currentDate, dailyScheduleState, dailyCustomSchedules, plannerSchedule, fastingDates, iqamahConfig, showToast, appSettings.geminiApiKey]);
+  }, [appSettings.geminiApiKey, currentDate, dailyCustomSchedules, plannerSchedule, fastingDates, iqamahConfig, showToast, setAiSuggestedChanges, setShowAISuggestionModal]);
 
   // --- Iqamah Times Handlers ---
 const handleFetchIqamahTimes = useCallback(async () => {
@@ -2142,6 +2123,12 @@ const handleFetchIqamahTimes = useCallback(async () => {
   // --- Google Calendar Integration Functions (using gapi) ---
   // Load gapi and gsi libraries
   useEffect(() => {
+    // Only proceed if googleClientId is available
+    if (!appSettings.googleClientId) {
+      console.warn('Google Client ID is missing. Google Calendar features will not initialize.');
+      return; // Exit if client ID is not set
+    }
+
     const loadGapi = () => {
       if (window.gapi && !gapiLoaded.current) {
         window.gapi.load('client:auth2', () => {
@@ -2164,28 +2151,31 @@ const handleFetchIqamahTimes = useCallback(async () => {
 
     const loadGsi = () => {
       if (window.google && window.google.accounts && window.google.accounts.oauth2 && !gsiLoaded.current) {
-        tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
-          client_id: appSettings.googleClientId,
-          scope: 'https://www.googleapis.com/auth/calendar.events',
-          callback: (tokenResponse) => {
-            if (tokenResponse && tokenResponse.access_token) {
-              window.gapi.client.setToken(tokenResponse); // Set the token for gapi.client
-              setAppSettings(prev => ({ ...prev, googleCalendarConnected: true }));
-              showToast('Google Calendar connected successfully!', 'success');
-              console.log('Google Calendar connected. Access Token:', tokenResponse.access_token);
-            } else {
-              setAppSettings(prev => ({ ...prev, googleCalendarConnected: false }));
-              showToast('Failed to connect Google Calendar. Please try again.', 'error');
-              console.error('Failed to connect Google Calendar:', tokenResponse);
+        // Ensure tokenClientRef.current is only initialized once
+        if (!tokenClientRef.current) {
+          tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+            client_id: appSettings.googleClientId,
+            scope: 'https://www.googleapis.com/auth/calendar.events',
+            callback: (tokenResponse) => {
+              if (tokenResponse && tokenResponse.access_token) {
+                window.gapi.client.setToken(tokenResponse); // Set the token for gapi.client
+                setAppSettings(prev => ({ ...prev, googleCalendarConnected: true }));
+                showToast('Google Calendar connected successfully!', 'success');
+                console.log('Google Calendar connected. Access Token:', tokenResponse.access_token);
+              } else {
+                setAppSettings(prev => ({ ...prev, googleCalendarConnected: false }));
+                showToast('Failed to connect Google Calendar. Please try again.', 'error');
+                console.error('Failed to connect Google Calendar:', tokenResponse);
+              }
+              setIsConnectingGCal(false);
+            },
+            error_callback: (error) => {
+              console.error('GSI Error:', error);
+              showToast('Google Calendar connection failed. See console for details.', 'error', 7000);
+              setIsConnectingGCal(false);
             }
-            setIsConnectingGCal(false);
-          },
-          error_callback: (error) => {
-            console.error('GSI Error:', error);
-            showToast('Google Calendar connection failed. See console for details.', 'error', 7000);
-            setIsConnectingGCal(false);
-          }
-        });
+          });
+        }
         gsiLoaded.current = true;
         console.log('Google Identity Services client initialized.');
       }
@@ -2203,7 +2193,7 @@ const handleFetchIqamahTimes = useCallback(async () => {
       window.removeEventListener('load', loadGapi);
       window.removeEventListener('load', loadGsi);
     };
-  }, [appSettings.googleClientId, appSettings.googleApiKey, setAppSettings, showToast]);
+  }, [appSettings.googleClientId, appSettings.googleApiKey, setAppSettings, showToast, setIsConnectingGCal]); // Added setIsConnectingGCal to dependencies
 
 
   const connectGoogleCalendar = useCallback(() => {
@@ -2510,13 +2500,105 @@ const handleFetchIqamahTimes = useCallback(async () => {
 
   }, [setAppSettings, showToast, setIsConnectingGCal]);
 
+// NEW: Apply AI Suggestions
+  const applyAISuggestions = useCallback((suggestions) => {
+    setDailyCustomSchedules(prevDailySchedules => {
+      const dateKey = formatDateToYYYYMMDD(currentDate);
+      let currentDaySchedule = prevDailySchedules[dateKey] ? [...prevDailySchedules[dateKey]] :
+                               generateScheduleForDate(currentDate, null, true, plannerSchedule, prevDailySchedules, fastingDates, iqamahConfig);
+
+      suggestions.forEach(sug => {
+        try {
+          if (sug.action === 'add_activity') {
+            const newActivity = {
+              id: crypto.randomUUID(),
+              activity: sug.activityName,
+              plannedStart: sug.newPlannedStart,
+              plannedEnd: sug.newPlannedEnd,
+              type: sug.type || 'personal', // Default type if not provided by AI
+              recurrenceType: 'none', // Added activities are usually one-time
+              recurrenceDays: [],
+              constraintType: sug.constraintType || 'adjustable', // Default constraint
+            };
+            currentDaySchedule.push(newActivity);
+            showToast(`Added: "${newActivity.activity}"`, 'success', 2000);
+          } else if (sug.action === 'modify_activity') {
+            const index = currentDaySchedule.findIndex(act => act.id === sug.originalActivityId);
+            if (index !== -1) {
+              currentDaySchedule[index] = {
+                ...currentDaySchedule[index],
+                activity: sug.activityName || currentDaySchedule[index].activity,
+                plannedStart: sug.newPlannedStart || currentDaySchedule[index].plannedStart,
+                plannedEnd: sug.newPlannedEnd || currentDaySchedule[index].plannedEnd,
+              };
+              showToast(`Modified: "${currentDaySchedule[index].activity}"`, 'success', 2000);
+            } else {
+              showToast(`Failed to modify: Activity with ID "${sug.originalActivityId}" not found.`, 'error', 3000);
+            }
+          } else if (sug.action === 'delete_activity') {
+            const originalLength = currentDaySchedule.length;
+            currentDaySchedule = currentDaySchedule.filter(act => act.id !== sug.originalActivityId);
+            if (currentDaySchedule.length < originalLength) {
+              showToast(`Deleted: Activity with ID "${sug.originalActivityId}"`, 'success', 2000);
+            } else {
+              showToast(`Failed to delete: Activity with ID "${sug.originalActivityId}" not found.`, 'error', 3000);
+            }
+          } else if (sug.action === 'shift_activities') {
+            const startIndex = currentDaySchedule.findIndex(act => act.id === sug.startActivityId);
+            const endIndex = currentDaySchedule.findIndex(act => act.id === sug.endActivityId);
+
+            if (startIndex !== -1 && endIndex !== -1) {
+              const activitiesToShift = currentDaySchedule.slice(startIndex, endIndex + 1);
+              const otherActivitiesBefore = currentDaySchedule.slice(0, startIndex);
+              const otherActivitiesAfter = currentDaySchedule.slice(endIndex + 1);
+
+              const shiftedActivities = activitiesToShift.map(act => {
+                const startMinutes = timeToMinutes(act.plannedStart);
+                const endMinutes = timeToMinutes(act.plannedEnd);
+                const duration = (endMinutes < startMinutes ? endMinutes + 1440 : endMinutes) - startMinutes;
+
+                let newStartMinutes = startMinutes + sug.shiftDurationMinutes;
+                let newEndMinutes = newStartMinutes + duration;
+
+                // Handle wrap around midnight
+                newStartMinutes = (newStartMinutes % 1440 + 1440) % 1440;
+                newEndMinutes = (newEndMinutes % 1440 + 1440) % 1440;
+
+                return {
+                  ...act,
+                  plannedStart: minutesToTime(newStartMinutes),
+                  plannedEnd: minutesToTime(newEndMinutes),
+                };
+              });
+              currentDaySchedule = [...otherActivitiesBefore, ...shiftedActivities, ...otherActivitiesAfter];
+              showToast(`Shifted activities from "${sug.startActivityId}" to "${sug.endActivityId}" by ${sug.shiftDurationMinutes} mins.`, 'success', 3000);
+            } else {
+              showToast(`Failed to shift: Start or end activity ID not found for shift.`, 'error', 3000);
+            }
+          }
+        } catch (actionError) {
+          console.error("Error applying AI suggestion:", sug, actionError);
+          showToast(`Error applying a suggestion: ${actionError.message}.`, 'error', 5000);
+        }
+      });
+
+      // Sort the schedule after applying all changes
+      currentDaySchedule.sort((a, b) => timeToMinutes(a.plannedStart) - timeToMinutes(b.plannedStart));
+
+      return { ...prevDailySchedules, [dateKey]: currentDaySchedule };
+    });
+
+    setShowAISuggestionModal(false); // Close modal after applying
+    setAiSuggestedChanges([]); // Clear suggestions
+  }, [currentDate, dailyCustomSchedules, plannerSchedule, fastingDates, iqamahConfig, showToast]);
+
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 font-inter text-gray-800 flex flex-col items-center">
         <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
           {/* Header and Tabs */}
           <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.16</span></h1>
+            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.17</span></h1>
             <div className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('schedule')}
@@ -4468,6 +4550,19 @@ const handleFetchIqamahTimes = useCallback(async () => {
             </button>
             {/* Add more context menu options here if needed later */}
           </div>
+        )}
+
+        {/* NEW: AI Suggestion Review Modal */}
+        {showAISuggestionModal && (
+          <AISuggestionReviewModal
+            suggestions={aiSuggestedChanges}
+            onApply={applyAISuggestions}
+            onCancel={() => {
+              setShowAISuggestionModal(false);
+              setAiSuggestedChanges([]); // Clear suggestions on cancel
+              showToast("AI suggestions cancelled.", "info", 2000);
+            }}
+          />
         )}
       </div>
     </ErrorBoundary>
