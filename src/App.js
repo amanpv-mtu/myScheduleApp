@@ -2598,7 +2598,7 @@ const handleFetchIqamahTimes = useCallback(async () => {
         <div className="w-full max-w-4xl bg-white shadow-xl rounded-xl p-6 mb-8 flex flex-col h-full">
           {/* Header and Tabs */}
           <div className="flex justify-between items-center mb-6 border-b pb-4 flex-shrink-0">
-            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.0.17</span></h1>
+            <h1 className="text-3xl font-bold text-indigo-700">{appName} <span className="text-xl text-gray-500">- v1.2.0</span></h1>
             <div className="flex space-x-2">
               <button
                 onClick={() => setActiveTab('schedule')}
@@ -3806,7 +3806,11 @@ const handleFetchIqamahTimes = useCallback(async () => {
               )}
 
               {taskViewMode === 'gantt' && (
-                <GanttChart projectTasks={projectTasks} />
+                <GanttChart
+                  tasks={projectTasks}
+                  setProjectTasks={setProjectTasks} // NEW: Pass the setter
+                  showToast={showToast} // NEW: Pass the toast function
+                />
               )}
             </div>
           )}
@@ -4861,135 +4865,519 @@ const AssignTaskModal = ({ onClose, projectTasks, dailyScheduleState, currentDat
   );
 };
 
-// GanttChart Component
-const GanttChart = ({ projectTasks }) => {
-  const chartRef = useRef(null);
-  const [chartWidth, setChartWidth] = useState(0);
+// --- Gantt Chart Component ---
+const GanttChart = ({ tasks, setProjectTasks, showToast }) => {
+  // State for zoom level (pixels per day)
+  const [pixelsPerDay, setPixelsPerDay] = useState(100); // Default: 100 pixels per day
+  const ganttChartRef = useRef(null); // Ref for the scrollable chart area
 
-  // Determine the overall date range for the chart
-  const allDates = projectTasks.flatMap(task => [
-    task.targetStartDate,
-    task.deadlineDate,
-    task.actualCompletionDate,
-  ]).filter(Boolean).map(d => new Date(d));
+  // States for drag & resize interactions
+  const [draggingGanttTask, setDraggingGanttTask] = useState(null); // { taskId, startX, initialLeft, initialWidth, initialTargetStartDate, initialDeadlineDate }
+  const [resizingGanttTask, setResizingGanttTask] = useState(null); // { taskId, startX, initialLeft, initialWidth, handleType: 'left' | 'right', initialTargetStartDate, initialDeadlineDate }
 
-  let minDate = allDates.length > 0 ? new Date(Math.min(...allDates)) : new Date();
-  let maxDate = allDates.length > 0 ? new Date(Math.max(...allDates)) : new Date();
+  // State for direct task editing popover
+  const [editingGanttTask, setEditingGanttTask] = useState(null); // { task, position: {x, y} }
+  const editPopoverRef = useRef(null); // Ref for the edit popover to handle clicks outside
 
-  // Adjust minDate to start of the month for better alignment
-  minDate.setDate(1);
-  minDate.setHours(0,0,0,0);
+  // Calculate the date range for the Gantt chart
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  // Add some padding to the date range (e.g., one month before and after)
-  minDate.setMonth(minDate.getMonth() - 1);
-  maxDate.setMonth(maxDate.getMonth() + 1);
-  maxDate.setDate(0); // Last day of previous month
-  maxDate.setHours(23,59,59,999);
+  // Determine minDate: Start of the week containing the earliest task, or today if no tasks
+  let minDate = new Date(today);
+  minDate.setDate(minDate.getDate() - minDate.getDay()); // Go to Sunday of current week
 
+  if (tasks.length > 0) {
+    const earliestTaskDate = tasks.reduce((min, task) => {
+      if (!task.targetStartDate) return min;
+      const taskStart = new Date(task.targetStartDate);
+      return taskStart < min ? taskStart : min;
+    }, new Date(today));
 
-  const totalDays = (maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24);
-
-  useEffect(() => {
-    const updateWidth = () => {
-      if (chartRef.current) {
-        setChartWidth(chartRef.current.clientWidth);
-      }
-    };
-    updateWidth();
-    window.addEventListener('resize', updateWidth);
-    return () => window.removeEventListener('resize', updateWidth);
-  }, []);
-
-  const pixelsPerDay = chartWidth / totalDays;
-
-  const getPositionAndWidth = (startDateStr, endDateStr) => {
-    if (!startDateStr) return { left: 0, width: 0 };
-
-    const startDate = new Date(startDateStr);
-    let endDate = endDateStr ? new Date(endDateStr) : new Date(); // If no end, extends to today
-
-    // Ensure dates are just dates, not times
-    startDate.setHours(0,0,0,0);
-    endDate.setHours(23,59,59,999); // End of day
-
-    const startOffsetDays = (startDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24);
-    const durationDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
-
-    const left = startOffsetDays * pixelsPerDay;
-    const width = durationDays * pixelsPerDay;
-    return { left, width: Math.max(width, 1) }; // Ensure minimum width of 1px
-  };
-
-  // Generate month labels
-  const monthLabels = [];
-  let currentMonth = new Date(minDate);
-  while (currentMonth <= maxDate) {
-    monthLabels.push({
-      date: new Date(currentMonth),
-      left: ((currentMonth.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) * pixelsPerDay,
-    });
-    currentMonth.setMonth(currentMonth.getMonth() + 1);
+    // Ensure minDate is the Sunday of the week containing the earliest task
+    minDate = new Date(earliestTaskDate);
+    minDate.setDate(minDate.getDate() - minDate.getDay());
   }
 
+  // Determine maxDate: End of the week containing the latest task, or 12 weeks from minDate
+  let maxDate = new Date(minDate);
+  maxDate.setDate(maxDate.getDate() + (12 * 7)); // Default to 12 weeks from minDate
+
+  if (tasks.length > 0) {
+    const latestTaskDate = tasks.reduce((max, task) => {
+      if (!task.deadlineDate) return max;
+      const taskEnd = new Date(task.deadlineDate);
+      return taskEnd > max ? taskEnd : max;
+    }, new Date(today));
+
+    // Ensure maxDate is the Saturday of the week containing the latest task, plus some buffer
+    maxDate = new Date(latestTaskDate);
+    maxDate.setDate(maxDate.getDate() + (6 - maxDate.getDay()) + (4 * 7)); // Go to Saturday + 4 weeks buffer
+  }
+
+  const chartDurationDays = (maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24);
+  const chartWidth = chartDurationDays * pixelsPerDay;
+
+  // Calculate day positions for grid lines and labels
+  const days = [];
+  let currentDateIter = new Date(minDate);
+  while (currentDateIter <= maxDate) {
+    days.push(new Date(currentDateIter));
+    currentDateIter.setDate(currentDateIter.getDate() + 1);
+  }
+
+  // Handle Gantt chart mouse down for drag/resize
+  const handleGanttMouseDown = useCallback((e, taskId, type) => {
+    e.stopPropagation(); // Prevent text selection or other default behaviors
+    setEditingGanttTask(null); // Close any open edit popover
+
+    const taskElement = e.currentTarget;
+    const taskRect = taskElement.getBoundingClientRect();
+    const chartRect = ganttChartRef.current.getBoundingClientRect();
+
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    if (type === 'move') {
+      setDraggingGanttTask({
+        taskId,
+        startX: e.clientX,
+        initialLeft: taskRect.left - chartRect.left + ganttChartRef.current.scrollLeft,
+        initialWidth: taskRect.width,
+        initialTargetStartDate: task.targetStartDate ? new Date(task.targetStartDate) : null,
+        initialDeadlineDate: task.deadlineDate ? new Date(task.deadlineDate) : null,
+      });
+    } else if (type === 'left-handle') {
+      setResizingGanttTask({
+        taskId,
+        startX: e.clientX,
+        initialLeft: taskRect.left - chartRect.left + ganttChartRef.current.scrollLeft,
+        initialWidth: taskRect.width,
+        handleType: 'left',
+        initialTargetStartDate: task.targetStartDate ? new Date(task.targetStartDate) : null,
+        initialDeadlineDate: task.deadlineDate ? new Date(task.deadlineDate) : null,
+      });
+    } else if (type === 'right-handle') {
+      setResizingGanttTask({
+        taskId,
+        startX: e.clientX,
+        initialLeft: taskRect.left - chartRect.left + ganttChartRef.current.scrollLeft,
+        initialWidth: taskRect.width,
+        handleType: 'right',
+        initialTargetStartDate: task.targetStartDate ? new Date(task.targetStartDate) : null,
+        initialDeadlineDate: task.deadlineDate ? new Date(task.deadlineDate) : null,
+      });
+    }
+  }, [tasks, pixelsPerDay]);
+
+  // Handle Gantt chart mouse move for drag/resize
+  const handleGanttMouseMove = useCallback((e) => {
+    if (draggingGanttTask) {
+      const dx = e.clientX - draggingGanttTask.startX;
+      const daysShifted = Math.round(dx / pixelsPerDay);
+
+      setProjectTasks(prevTasks => prevTasks.map(task => {
+        if (task.id === draggingGanttTask.taskId) {
+          const newTargetStartDate = draggingGanttTask.initialTargetStartDate ? new Date(draggingGanttTask.initialTargetStartDate) : null;
+          const newDeadlineDate = draggingGanttTask.initialDeadlineDate ? new Date(draggingGanttTask.initialDeadlineDate) : null;
+
+          if (newTargetStartDate) newTargetStartDate.setDate(newTargetStartDate.getDate() + daysShifted);
+          if (newDeadlineDate) newDeadlineDate.setDate(newDeadlineDate.getDate() + daysShifted);
+
+          return {
+            ...task,
+            targetStartDate: newTargetStartDate ? formatDateToYYYYMMDD(newTargetStartDate) : task.targetStartDate,
+            deadlineDate: newDeadlineDate ? formatDateToYYYYMMDD(newDeadlineDate) : task.deadlineDate,
+          };
+        }
+        return task;
+      }));
+    } else if (resizingGanttTask) {
+      const dx = e.clientX - resizingGanttTask.startX;
+      const task = tasks.find(t => t.id === resizingGanttTask.taskId);
+      if (!task) return;
+
+      const newTargetStartDate = resizingGanttTask.initialTargetStartDate ? new Date(resizingGanttTask.initialTargetStartDate) : null;
+      const newDeadlineDate = resizingGanttTask.initialDeadlineDate ? new Date(resizingGanttTask.initialDeadlineDate) : null;
+
+      setProjectTasks(prevTasks => prevTasks.map(t => {
+        if (t.id === resizingGanttTask.taskId) {
+          if (resizingGanttTask.handleType === 'left') {
+            const daysShifted = Math.round(dx / pixelsPerDay);
+            if (newTargetStartDate) newTargetStartDate.setDate(newTargetStartDate.getDate() + daysShifted);
+            return {
+              ...t,
+              targetStartDate: newTargetStartDate ? formatDateToYYYYMMDD(newTargetStartDate) : t.targetStartDate,
+            };
+          } else if (resizingGanttTask.handleType === 'right') {
+            const daysExtended = Math.round(dx / pixelsPerDay);
+            if (newDeadlineDate) newDeadlineDate.setDate(newDeadlineDate.getDate() + daysExtended);
+            return {
+              ...t,
+              deadlineDate: newDeadlineDate ? formatDateToYYYYMMDD(newDeadlineDate) : t.deadlineDate,
+            };
+          }
+        }
+        return t;
+      }));
+    }
+  }, [draggingGanttTask, resizingGanttTask, pixelsPerDay, tasks, setProjectTasks]);
+
+  // Handle Gantt chart mouse up to finalize drag/resize
+  const handleGanttMouseUp = useCallback(() => {
+    if (draggingGanttTask) {
+      showToast('Task moved successfully!', 'success');
+    } else if (resizingGanttTask) {
+      showToast('Task resized successfully!', 'success');
+    }
+    setDraggingGanttTask(null);
+    setResizingGanttTask(null);
+  }, [draggingGanttTask, resizingGanttTask, showToast]);
+
+  // Attach/detach mouse event listeners
+  useEffect(() => {
+    const chartElement = ganttChartRef.current;
+    if (chartElement) {
+      chartElement.addEventListener('mousemove', handleGanttMouseMove);
+      chartElement.addEventListener('mouseup', handleGanttMouseUp);
+      // Add global listeners for mouseup to catch releases outside the chart area
+      document.addEventListener('mouseup', handleGanttMouseUp);
+    }
+    return () => {
+      if (chartElement) {
+        chartElement.removeEventListener('mousemove', handleGanttMouseMove);
+        chartElement.removeEventListener('mouseup', handleGanttMouseUp);
+      }
+      document.removeEventListener('mouseup', handleGanttMouseUp);
+    };
+  }, [handleGanttMouseMove, handleGanttMouseUp]);
+
+
+  // Zoom functions
+  const zoomIn = () => setPixelsPerDay(prev => Math.min(prev + 20, 300)); // Max zoom
+  const zoomOut = () => setPixelsPerDay(prev => Math.max(prev - 20, 50)); // Min zoom
+
+  // Scroll to today function
+  const scrollToToday = useCallback(() => {
+    if (ganttChartRef.current) {
+      const todayDiffDays = (today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24);
+      const scrollPosition = todayDiffDays * pixelsPerDay - (ganttChartRef.current.clientWidth / 2);
+      ganttChartRef.current.scrollTo({
+        left: scrollPosition,
+        behavior: 'smooth'
+      });
+    }
+  }, [minDate, pixelsPerDay, today]);
+
+  // Effect to scroll to today initially
+  useEffect(() => {
+    scrollToToday();
+  }, [scrollToToday, tasks.length]); // Scroll once tasks are loaded/rendered
+
+  // Handle click outside edit popover
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (editPopoverRef.current && !editPopoverRef.current.contains(event.target)) {
+        setEditingGanttTask(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Function to open edit popover
+  const openEditPopover = useCallback((task, e) => {
+    e.stopPropagation(); // Prevent drag/resize from starting
+    const rect = e.currentTarget.getBoundingClientRect();
+    setEditingGanttTask({
+      task: { ...task }, // Create a copy to edit
+      position: { x: rect.left + rect.width / 2, y: rect.bottom + 10 } // Position below the task bar
+    });
+  }, []);
+
+  // Function to save edits from popover
+  const saveEditedGanttTask = useCallback(() => {
+    if (editingGanttTask && editingGanttTask.task) {
+      setProjectTasks(prevTasks => prevTasks.map(t =>
+        t.id === editingGanttTask.task.id ? editingGanttTask.task : t
+      ));
+      showToast('Task details updated!', 'success');
+      setEditingGanttTask(null);
+    }
+  }, [editingGanttTask, setProjectTasks, showToast]);
+
+  // Calculate total height needed for task rows
+  const taskRowsHeight = tasks.length * 60; // 60px height per task row
+  const minChartHeight = 300; // Minimum height for the chart area
+  const totalChartHeight = Math.max(minChartHeight, taskRowsHeight);
+
   return (
-    <div className="bg-white rounded-lg shadow-md p-4 overflow-x-auto">
-      <h3 className="text-xl font-semibold text-indigo-700 mb-4">Project Gantt Chart</h3>
-      <div className="relative border border-gray-200 rounded-md" ref={chartRef} style={{ minWidth: '800px', height: 'auto' }}>
-        {/* Month Grid */}
-        {monthLabels.map((month, index) => (
-          <div
-            key={index}
-            className="absolute top-0 bottom-0 border-l border-gray-300 text-xs text-gray-500 pt-1 px-2"
-            style={{ left: `${month.left}px` }}
-          >
-            {month.date.toLocaleString('en-US', { month: 'short', year: '2-digit' })}
-          </div>
-        ))}
-        {/* Today Line */}
-        <div
-          className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
-          style={{ left: `${((new Date().setHours(0,0,0,0) - minDate.getTime()) / (1000 * 60 * 60 * 24)) * pixelsPerDay}px` }}
+    <div className="p-4 bg-white rounded-lg shadow-md">
+      <h3 className="text-2xl font-bold text-indigo-700 mb-4">Project Timeline (Gantt Chart)</h3>
+
+      {/* Zoom and Scroll to Today Controls */}
+      <div className="flex justify-end mb-4 space-x-2">
+        <button
+          onClick={zoomOut}
+          className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md shadow-sm hover:bg-gray-300 transition-colors"
         >
-          <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs text-red-700 font-bold">Today</span>
-        </div>
+          Zoom Out
+        </button>
+        <button
+          onClick={zoomIn}
+          className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md shadow-sm hover:bg-gray-300 transition-colors"
+        >
+          Zoom In
+        </button>
+        <button
+          onClick={scrollToToday}
+          className="px-3 py-1 bg-indigo-500 text-white rounded-md shadow-sm hover:bg-indigo-600 transition-colors"
+        >
+          Scroll to Today
+        </button>
+      </div>
 
-        {/* Task Rows */}
-        <div className="pt-10 pb-4"> {/* Padding for month labels */}
-          {projectTasks.map((task) => {
-            const planned = getPositionAndWidth(task.targetStartDate, task.deadlineDate);
-            const actual = getPositionAndWidth(task.targetStartDate, task.actualCompletionDate || formatDateToYYYYMMDD(new Date())); // Actual ends today if not completed
+      <div className="overflow-x-auto border border-gray-200 rounded-lg" ref={ganttChartRef} style={{ height: `${totalChartHeight}px` }}>
+        <div className="relative" style={{ width: chartWidth }}>
+          {/* Date Headers (Weekly/Daily) */}
+          <div className="flex h-16 border-b border-gray-300 bg-gray-50 sticky top-0 z-10">
+            {days.map((date, index) => {
+              const isTodayColumn = formatDateToYYYYMMDD(date) === formatDateToYYYYMMDD(today);
+              const isSunday = date.getDay() === 0; // Sunday
+              const isMonday = date.getDay() === 1; // Monday
 
-            return (
-              <div key={task.id} className="relative h-12 mb-2">
-                <div className="absolute left-0 w-32 text-sm font-medium text-gray-700 truncate pr-2" style={{ top: '50%', transform: 'translateY(-50%)' }}>
-                  {task.name}
+              return (
+                <div
+                  key={index}
+                  className={`flex-shrink-0 flex flex-col justify-center items-center border-r border-gray-200
+                    ${isTodayColumn ? 'bg-indigo-100 font-semibold text-indigo-800' : ''}
+                    ${isSunday ? 'bg-blue-50' : ''}
+                  `}
+                  style={{ width: pixelsPerDay }}
+                >
+                  <span className="text-xs text-gray-600">{date.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+                  <span className="text-sm font-medium">{date.getDate()}</span>
+                  {isMonday && (
+                    <span className="absolute top-0 left-0 -translate-x-1/2 text-xs text-gray-500 font-semibold mt-1">
+                      {date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                    </span>
+                  )}
                 </div>
-                <div className="ml-36 relative h-full">
-                  {planned.width > 0 && (
+              );
+            })}
+          </div>
+
+          {/* Grid Lines and Alternating Rows */}
+          <div className="absolute inset-0 flex flex-col">
+            {/* Horizontal Lines for Task Rows */}
+            {tasks.map((_, index) => (
+              <div
+                key={`row-bg-${index}`}
+                className={`w-full h-[60px] ${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`} // Alternating row background
+                style={{ top: `${index * 60 + 5}px`, position: 'absolute' }}
+              ></div>
+            ))}
+            {/* Vertical Grid Lines */}
+            <div className="absolute inset-0 flex">
+              {days.map((date, index) => (
+                <div
+                  key={`grid-${index}`}
+                  className={`flex-shrink-0 border-r border-gray-100 ${date.getDay() === 0 ? 'border-r-2 border-blue-200' : ''}`}
+                  style={{ width: pixelsPerDay, height: '100%' }}
+                ></div>
+              ))}
+            </div>
+          </div>
+
+          {/* "Today" Indicator Line */}
+          {ganttChartRef.current && (
+            <div
+              className="absolute top-0 bottom-0 bg-indigo-500 w-0.5 z-20"
+              style={{
+                left: `${((today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) * pixelsPerDay}px`
+              }}
+            ></div>
+          )}
+
+
+          {/* Task Bars */}
+          <div className="relative pt-2 pb-4">
+            {tasks.map((task, taskIndex) => {
+              if (!task.targetStartDate || !task.deadlineDate) return null;
+
+              const startDate = new Date(task.targetStartDate);
+              const deadlineDate = new Date(task.deadlineDate);
+
+              // Calculate left position (days from minDate * pixelsPerDay)
+              const startDiffDays = (startDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24);
+              const left = startDiffDays * pixelsPerDay;
+
+              // Calculate width (duration in days * pixelsPerDay)
+              const durationDays = (deadlineDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+              const width = Math.max(pixelsPerDay / 2, (durationDays + 1) * pixelsPerDay); // Min width of half a day
+
+              // Determine status for coloring
+              const now = new Date();
+              const isCompleted = task.status === 'Completed';
+              const isOverdue = !isCompleted && now > deadlineDate;
+              const isOngoing = !isCompleted && now >= startDate && now <= deadlineDate;
+
+              //let bgColorClass = 'bg-blue-500'; // Planned
+              let gradientClass = 'from-blue-500 to-blue-600';
+              let textColorClass = 'text-white';
+
+              if (isCompleted) {
+                bgColorClass = 'bg-green-500';
+                gradientClass = 'from-green-500 to-green-600';
+              } else if (isOverdue) {
+                bgColorClass = 'bg-red-500';
+                gradientClass = 'from-red-500 to-red-600';
+              } else if (isOngoing) {
+                bgColorClass = 'bg-yellow-500';
+                gradientClass = 'from-yellow-500 to-yellow-600';
+                textColorClass = 'text-gray-900'; // Dark text for yellow background
+              }
+
+              // Calculate progress bar width
+              const progressPercentage = task.progress ? Math.max(0, Math.min(100, task.progress)) : 0;
+              const progressBarWidth = `${progressPercentage}%`;
+
+
+              return (
+                <div
+                  key={task.id}
+                  className={`absolute h-12 rounded-md px-2 flex items-center shadow-lg cursor-grab active:cursor-grabbing group
+                              bg-gradient-to-r ${gradientClass} ${textColorClass}`} // Increased height, applied gradient, shadow-lg
+                  style={{
+                    left: `${left}px`,
+                    width: `${width}px`,
+                    top: `${taskIndex * 60 + 5}px`, // Stack tasks vertically, adjusted top for new height
+                    zIndex: draggingGanttTask?.taskId === task.id || resizingGanttTask?.taskId === task.id ? 20 : 10,
+                  }}
+                  onMouseDown={(e) => handleGanttMouseDown(e, task.id, 'move')}
+                  onClick={(e) => openEditPopover(task, e)} // Open edit popover on click
+                >
+                  <span className={`text-sm font-semibold truncate ${textColorClass}`}>{task.name}</span>
+
+                  {/* Progress Bar */}
+                  {progressPercentage > 0 && (
                     <div
-                      className="absolute h-4 bg-blue-300 rounded-sm opacity-75"
-                      style={{ left: `${planned.left}px`, width: `${planned.width}px`, top: '0%' }}
-                      title={`Planned: ${task.targetStartDate || 'N/A'} to ${task.deadlineDate || 'N/A'}`}
+                      className="absolute bottom-0 left-0 h-1 bg-white bg-opacity-50 rounded-full"
+                      style={{ width: progressBarWidth }}
                     ></div>
                   )}
-                  {actual.width > 0 && (
-                    <div
-                      className={`absolute h-4 rounded-sm
-                        ${task.actualCompletionDate ? 'bg-green-500' : 'bg-yellow-500'}
-                      `}
-                      style={{ left: `${actual.left}px`, width: `${actual.width}px`, top: '50%', transform: 'translateY(-50%)' }}
-                      title={`Actual: ${task.targetStartDate || 'N/A'} to ${task.actualCompletionDate || 'Today'}`}
-                    ></div>
-                  )}
+
+                  {/* Left Resize Handle */}
+                  <div
+                    className="absolute top-0 bottom-0 left-0 w-2 rounded-l-md cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity duration-150 bg-black bg-opacity-20"
+                    onMouseDown={(e) => handleGanttMouseDown(e, task.id, 'left-handle')}
+                  ></div>
+                  {/* Right Resize Handle */}
+                  <div
+                    className="absolute top-0 bottom-0 right-0 w-2 rounded-r-md cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity duration-150 bg-black bg-opacity-20"
+                    onMouseDown={(e) => handleGanttMouseDown(e, task.id, 'right-handle')}
+                  ></div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
       <p className="text-sm text-gray-500 mt-4">
-        Blue bars represent planned timelines. Green bars represent completed actual timelines. Yellow bars represent ongoing actual timelines.
+        <span className="inline-block w-4 h-4 rounded-full bg-blue-500 mr-1"></span> Planned &nbsp;
+        <span className="inline-block w-4 h-4 rounded-full bg-green-500 mr-1"></span> Completed &nbsp;
+        <span className="inline-block w-4 h-4 rounded-full bg-yellow-500 mr-1"></span> Ongoing &nbsp;
+        <span className="inline-block w-4 h-4 rounded-full bg-red-500 mr-1"></span> Overdue
       </p>
+
+      {/* Task Edit Popover */}
+      {editingGanttTask && (
+        <div
+          ref={editPopoverRef}
+          className="absolute bg-white rounded-lg shadow-xl p-4 z-30 border border-gray-200"
+          style={{
+            left: editingGanttTask.position.x,
+            top: editingGanttTask.position.y,
+            transform: 'translateX(-50%)', // Center horizontally
+          }}
+        >
+          <h4 className="font-bold text-indigo-700 mb-3">Edit Task</h4>
+          <div className="space-y-3">
+            <div>
+              <label htmlFor="editTaskName" className="block text-xs font-medium text-gray-700">Task Name</label>
+              <input
+                type="text"
+                id="editTaskName"
+                value={editingGanttTask.task.name || ''}
+                onChange={(e) => setEditingGanttTask(prev => ({ ...prev, task: { ...prev.task, name: e.target.value } }))}
+                className="mt-1 block w-full p-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label htmlFor="editTargetStartDate" className="block text-xs font-medium text-gray-700">Start Date</label>
+              <input
+                type="date"
+                id="editTargetStartDate"
+                value={editingGanttTask.task.targetStartDate || ''}
+                onChange={(e) => setEditingGanttTask(prev => ({ ...prev, task: { ...prev.task, targetStartDate: e.target.value } }))}
+                className="mt-1 block w-full p-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label htmlFor="editDeadlineDate" className="block text-xs font-medium text-gray-700">Deadline Date</label>
+              <input
+                type="date"
+                id="editDeadlineDate"
+                value={editingGanttTask.task.deadlineDate || ''}
+                onChange={(e) => setEditingGanttTask(prev => ({ ...prev, task: { ...prev.task, deadlineDate: e.target.value } }))}
+                className="mt-1 block w-full p-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label htmlFor="editProgress" className="block text-xs font-medium text-gray-700">Progress (%)</label>
+              <input
+                type="number"
+                id="editProgress"
+                value={editingGanttTask.task.progress || 0}
+                onChange={(e) => setEditingGanttTask(prev => ({ ...prev, task: { ...prev.task, progress: Number(e.target.value) } }))}
+                min="0"
+                max="100"
+                className="mt-1 block w-full p-2 border border-gray-300 rounded-md text-sm"
+              />
+            </div>
+            <div>
+              <label htmlFor="editStatus" className="block text-xs font-medium text-gray-700">Status</label>
+              <select
+                id="editStatus"
+                value={editingGanttTask.task.status || 'Not Started'}
+                onChange={(e) => setEditingGanttTask(prev => ({ ...prev, task: { ...prev.task, status: e.target.value } }))}
+                className="mt-1 block w-full p-2 border border-gray-300 rounded-md text-sm"
+              >
+                <option value="Not Started">Not Started</option>
+                <option value="Ongoing">Ongoing</option>
+                <option value="Completed">Completed</option>
+                <option value="On Hold">On Hold</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex justify-end space-x-2 mt-4">
+            <button
+              onClick={() => setEditingGanttTask(null)}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md text-sm hover:bg-gray-300"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={saveEditedGanttTask}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
